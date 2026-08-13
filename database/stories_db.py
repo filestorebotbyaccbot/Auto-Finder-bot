@@ -3,27 +3,7 @@ from rapidfuzz import process, fuzz
 
 # Collections
 users_col = db["bot_users"]
-welcome_col = db["group_settings"]
 
-
-# --- Group Welcome Settings Helper Functions ---
-
-async def set_welcome_db(chat_id: int, text: str):
-    """Sets or updates a custom welcome message for a group."""
-    await welcome_col.update_one(
-        {"chat_id": chat_id},
-        {"$set": {"welcome_text": text}},
-        upsert=True
-    )
-    return True
-
-
-async def get_welcome_db(chat_id: int):
-    """Fetches custom welcome message for a group."""
-    data = await welcome_col.find_one({"chat_id": chat_id})
-    if data and "welcome_text" in data:
-        return data["welcome_text"]
-    return None
 
 
 # --- User Collection Helper Functions (For Broadcast) ---
