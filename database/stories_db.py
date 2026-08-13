@@ -1,5 +1,37 @@
-from database.db import stories_col, requests_col
+from database.db import db, stories_col, requests_col
 from rapidfuzz import process, fuzz
+
+# Broadcast users collection
+users_col = db["bot_users"]
+
+
+# --- User Collection Helper Functions (For Broadcast) ---
+
+async def add_user_db(user_id: int, first_name: str, username: str = None):
+    """Saves or updates a user in MongoDB for broadcasting."""
+    user_data = {
+        "user_id": user_id,
+        "first_name": first_name,
+        "username": username
+    }
+    await users_col.update_one(
+        {"user_id": user_id},
+        {"$set": user_data},
+        upsert=True
+    )
+    return True
+
+
+async def get_all_users_db():
+    """Fetches all registered user IDs from MongoDB."""
+    user_ids = []
+    async for doc in users_col.find({}, {"user_id": 1}):
+        if "user_id" in doc:
+            user_ids.append(doc["user_id"])
+    return user_ids
+
+
+# --- Story Collection Helper Functions ---
 
 async def add_story_db(title: str, photo: str, link: str, description: str = ""):
     """Inserts or updates a story document into MongoDB."""
@@ -70,6 +102,8 @@ async def search_story_db(query: str):
     return {"type": "suggestions", "data": filtered_matches}
 
 
+# --- Request Collection Helper Functions ---
+
 async def add_request_db(user_id: int, user_name: str, story_name: str):
     """Saves a user story request into database."""
     request_data = {
@@ -81,6 +115,8 @@ async def add_request_db(user_id: int, user_name: str, story_name: str):
     await requests_col.insert_one(request_data)
     return True
 
+
+# --- Delete Operations ---
 
 async def delete_single_story_db(query: str):
     """Deletes a single story document by title or search title."""
