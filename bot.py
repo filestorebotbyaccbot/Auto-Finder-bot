@@ -30,10 +30,14 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"⚠️ Failed to send log to LOG_CHANNEL: {e}")
 
-    # Initialize Port 8080 Keep-Alive Web Server for Render
-    web_app = app.loop.run_until_complete(web_server())
-    site = web.TCPSite(web.AppRunner(web_app), "0.0.0.0", Config.PORT)
-    app.loop.run_until_complete(site.start())
-    print(f"🌐 Keep-Alive Web Server running on Port {Config.PORT}")
-    
+    # Fix: Correct aiohttp AppRunner initialization for Render Port 8080
+    async def start_services():
+        web_app = await web_server()
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", Config.PORT)
+        await site.start()
+        print(f"🌐 Keep-Alive Web Server running on Port {Config.PORT}")
+
+    app.loop.run_until_complete(start_services())
     app.loop.run_forever()
