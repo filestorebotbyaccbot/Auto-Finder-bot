@@ -1,3 +1,4 @@
+import asyncio
 from bson.objectid import ObjectId
 from pyrogram import Client, filters
 from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -5,7 +6,6 @@ from script import Script
 from config import Config
 from database.stories_db import add_user_db, stories_col
 
-# PM Standard Start Buttons
 START_BUTTONS = InlineKeyboardMarkup([
     [
         InlineKeyboardButton("📢 Story Channel", url=Config.STORY_CHANNEL),
@@ -25,60 +25,28 @@ BACK_BUTTON = InlineKeyboardMarkup([
 ])
 
 
-# Private Chat /start Handler (Deep Linking Integrated)
+# Helper function for non-blocking Auto-Delete
+async def auto_delete_msg(message: Message, delay: int):
+    await asyncio.sleep(delay)
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+
+# Private Chat /start Handler
 @Client.on_message(filters.command("start") & filters.private)
 async def private_start_cmd(bot: Client, message: Message):
     user = message.from_user
 
-    # 1. Save User for Broadcasting
+    # Save User for Broadcasting
     await add_user_db(
         user_id=user.id,
         first_name=user.first_name,
         username=user.username
     )
 
-    # 2. Check Redirect Payload (/start st_<story_id>)
-    if len(message.command) > 1:
-        payload = message.command[1]
-
-        # Handle Story Payload
-        if payload.startswith("st_"):
-            story_id = payload.split("st_", 1)[1]
-            story = None
-
-            # Fetch Story by ObjectId or Title
-            try:
-                story = await stories_col.find_one({"_id": ObjectId(story_id)})
-            except Exception:
-                story = await stories_col.find_one({"title": story_id})
-
-            if story:
-                caption = (
-                    f"📖 **Story Found:** `{story['title']}`\n\n"
-                    f"✨ Tap the button below to play ▶️ the complete story:"
-                )
-                button = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📖 Play Story", url=story["link"])],
-                    [InlineKeyboardButton("🔙 Home", callback_data="home_cb")]
-                ])
-
-                try:
-                    return await message.reply_photo(
-                        photo=story["photo"],
-                        caption=caption,
-                        reply_markup=button
-                    )
-                except Exception:
-                    return await message.reply_text(
-                        text=caption,
-                        reply_markup=button,
-                        disable_web_page_preview=True
-                    )
-            else:
-                await message.reply_text("❌ **यह स्टोरी डेटाबेस में नहीं मिली या हटा दी गई है!**")
-
-    # 3. Standard /start Flow (If no payload present)
-    await message.reply_text(
+    start_msg = await message.reply_text(
         text=Script.START_TXT.format(
             mention=user.mention,
             user_id=user.id
@@ -87,7 +55,6 @@ async def private_start_cmd(bot: Client, message: Message):
         disable_web_page_preview=True
     )
 
-    # Log Channel Alert
     if Config.LOG_CHANNEL:
         try:
             log_text = (
@@ -101,34 +68,21 @@ async def private_start_cmd(bot: Client, message: Message):
             print(f"⚠️ Log Channel error: {e}")
 
 
-# Callbacks for About, Help, Home, and Close
+# Callbacks for About and Help
 @Client.on_callback_query()
 async def cb_handler(bot: Client, query: CallbackQuery):
     data = query.data
     user_id = query.from_user.id
 
     if data == "home_cb":
-        # Check if message has a photo (from redirected story view)
-        if query.message.photo:
-            await query.message.delete()
-            await bot.send_message(
-                chat_id=query.message.chat.id,
-                text=Script.START_TXT.format(
-                    mention=query.from_user.mention,
-                    user_id=user_id
-                ),
-                reply_markup=START_BUTTONS,
-                disable_web_page_preview=True
-            )
-        else:
-            await query.message.edit_text(
-                text=Script.START_TXT.format(
-                    mention=query.from_user.mention,
-                    user_id=user_id
-                ),
-                reply_markup=START_BUTTONS,
-                disable_web_page_preview=True
-            )
+        await query.message.edit_text(
+            text=Script.START_TXT.format(
+                mention=query.from_user.mention,
+                user_id=user_id
+            ),
+            reply_markup=START_BUTTONS,
+            disable_web_page_preview=True
+        )
 
     elif data == "about_cb":
         await query.message.edit_text(
