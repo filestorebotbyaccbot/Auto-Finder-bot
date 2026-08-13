@@ -4,7 +4,6 @@ from pyrogram.enums import ChatMemberStatus
 from config import Config
 from database.stories_db import set_welcome_db, get_welcome_db
 
-# Group Buttons
 GROUP_START_BUTTONS = InlineKeyboardMarkup([
     [
         InlineKeyboardButton("💬 Support Group", url=Config.SUPPORT_GROUP),
@@ -15,62 +14,43 @@ GROUP_START_BUTTONS = InlineKeyboardMarkup([
     ]
 ])
 
-
-# 1. /setwelcome Command (Group Admin Only)
-@Client.on_message(filters.command("setwelcome") & ~filters.private)
-async def set_custom_welcome(bot: Client, message: Message):
+# Fix: Admin status verification with fallback
+async def is_admin(chat_id: int, user_id: int, bot: Client) -> bool:
     try:
-        # Check Admin Rights
-        user_member = await message.chat.get_member(message.from_user.id)
-        if user_member.status not in [ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR]:
-            return await message.reply_text("⛔ **Only Group Admins can set welcome messages!**")
+        member = await bot.get_chat_member(chat_id, user_id)
+        return member.status in [ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR]
+    except Exception:
+        return False
 
-        # Extract Text
-        if len(message.command) < 2:
-            return await message.reply_text(
-                "⚠️ **उपयोग करने का तरीका:**\n\n"
-                "`/setwelcome Welcome {mention} to {chat}! Enjoy reading stories here.`\n\n"
-                "💡 **Variables:**\n"
-                "• `{mention}` - User link\n"
-                "• `{name}` - First name\n"
-                "• `{chat}` - Group Name"
-            )
+@Client.on_message(filters.command(["setwelcome", "setwelcome@InfinityStorysFinderBot"]) & ~filters.private)
+async def set_custom_welcome(bot: Client, message: Message):
+    # Check User Admin Rights
+    if not await is_admin(message.chat.id, message.from_user.id, bot):
+        return await message.reply_text("⛔ **Only Group Admins can set welcome messages!**")
 
-        custom_text = message.text.split(None, 1)[1]
-        await set_welcome_db(message.chat.id, custom_text)
-        
-        await message.reply_text("✅ **Custom Welcome Message successfully set for this group!**")
+    if len(message.command) < 2:
+        return await message.reply_text(
+            "⚠️ **उपयोग करने का सही तरीका:**\n\n"
+            "`/setwelcome Welcome {mention} to {chat}! Enjoy reading stories here.`\n\n"
+            "💡 **Available Shortcodes:**\n"
+            "• `{mention}` - User Link\n"
+            "• `{name}` - First Name\n"
+            "• `{chat}` - Group Title"
+        )
 
-    except Exception as e:
-        print(f"⚠️ Set Welcome Error: {e}")
-        await message.reply_text(f"❌ **Error:** `{e}`\n\n*(Make sure I am Admin in this group)*")
-
-
-# 2. Group /start Command
-@Client.on_message(filters.command("start") & ~filters.private)
-async def group_start_cmd(bot: Client, message: Message):
-    user = message.from_user
-    chat = message.chat
-
-    group_text = (
-        f"👋 **Welcome to {chat.title}!**\n\n"
-        f"Hello {user.mention}, I am active here to help you search and play your favorite stories! "
-        f"Just type any story name in this group to search."
-    )
+    custom_text = message.text.split(None, 1)[1]
     
-    await message.reply_text(
-        text=group_text,
-        reply_markup=GROUP_START_BUTTONS,
-        disable_web_page_preview=True
-    )
+    # DB Save
+    await set_welcome_db(message.chat.id, custom_text)
+    await message.reply_text("✅ **Custom Welcome Message successfully updated for this group!**")
 
-
-# 3. Auto Welcome New Members Handler
+# Auto-Welcome Handler for New Members
 @Client.on_chat_member_updated()
 async def auto_welcome_new_members(bot: Client, event: ChatMemberUpdated):
     try:
+        # Check if new user joined or was added
         if (
-            (event.old_chat_member is None or event.old_chat_member.status == ChatMemberStatus.BANNED) 
+            (event.old_chat_member is None or event.old_chat_member.status in [ChatMemberStatus.LEFT, ChatMemberStatus.BANNED]) 
             and event.new_chat_member is not None 
             and event.new_chat_member.status == ChatMemberStatus.MEMBER
         ):
@@ -101,4 +81,4 @@ async def auto_welcome_new_members(bot: Client, event: ChatMemberUpdated):
                 disable_web_page_preview=True
             )
     except Exception as e:
-        print(f"⚠️ Welcome Handler Error: {e}")
+        print(f"⚠️ Auto-Welcome Error: {e}")
