@@ -6,6 +6,9 @@ class Config:
     API_HASH = os.environ.get("API_HASH", "your_api_hash_here")
     BOT_TOKEN = os.environ.get("BOT_TOKEN", "your_bot_token_here")
     
+    # --- Log Channel ID (Channel ID starts with -100) ---
+    LOG_CHANNEL = int(os.environ.get("LOG_CHANNEL", "-1001234567890"))
+    
     # --- MongoDB Settings ---
     MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://user:pass@cluster.mongodb.net/?retryWrites=true&w=majority")
     DATABASE_NAME = os.environ.get("DATABASE_NAME", "VC_Story_Finder_Bot")
