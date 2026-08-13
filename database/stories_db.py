@@ -62,7 +62,8 @@ async def add_request_db(user_id: int, user_name: str, story_name: str):
     }
     await requests_col.insert_one(request_data)
     return True
-  async def delete_single_story_db(query: str):
+    
+async def delete_single_story_db(query: str):
     """Deletes a single story document by title or exact match."""
     clean_query = query.strip().lower()
     
