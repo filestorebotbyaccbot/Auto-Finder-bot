@@ -2,6 +2,7 @@ from pyrogram import Client, filters
 from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from script import Script
 from config import Config
+from database.stories_db import add_user_db
 
 START_BUTTONS = InlineKeyboardMarkup([
     [
@@ -25,7 +26,14 @@ BACK_BUTTON = InlineKeyboardMarkup([
 async def start_cmd(bot: Client, message: Message):
     user = message.from_user
     
-    # 1. Reply to User
+    # 1. Save User to MongoDB (For Broadcast & Stats)
+    await add_user_db(
+        user_id=user.id,
+        first_name=user.first_name,
+        username=user.username
+    )
+
+    # 2. Reply Start Message to User
     await message.reply_text(
         text=Script.START_TXT.format(
             mention=user.mention,
@@ -35,7 +43,7 @@ async def start_cmd(bot: Client, message: Message):
         disable_web_page_preview=True
     )
 
-    # 2. Send User Log Notification to LOG_CHANNEL
+    # 3. Send User Log Notification to LOG_CHANNEL
     if Config.LOG_CHANNEL:
         try:
             log_text = (
