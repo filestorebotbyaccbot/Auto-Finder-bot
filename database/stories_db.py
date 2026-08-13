@@ -3,7 +3,8 @@ from rapidfuzz import process, fuzz
 
 async def add_story_db(title: str, photo: str, link: str, description: str = ""):
     """Inserts or updates a story document into MongoDB."""
-    clean_title = title.strip().split("\n")[0]  # Store only 1st line as title
+    # Store strictly the first line as the title
+    clean_title = title.strip().split("\n")[0]
     
     story_data = {
         "title": clean_title,
@@ -20,6 +21,7 @@ async def add_story_db(title: str, photo: str, link: str, description: str = "")
     )
     return True
 
+
 async def get_all_titles():
     """Fetches all story titles from MongoDB."""
     titles = []
@@ -28,29 +30,45 @@ async def get_all_titles():
             titles.append(doc["title"])
     return titles
 
+
 async def search_story_db(query: str):
     """
-    Performs Exact + RapidFuzz matching against MongoDB story titles.
+    Performs Exact Match + RapidFuzz Top 4 Suggestions search against MongoDB story titles.
     """
     clean_query = query.strip().lower()
     
     # 1. Exact Match Check
     exact_match = await stories_col.find_one({"search_title": clean_query})
     if exact_match:
-        return exact_match, 100
+        return {"type": "exact", "data": exact_match}
 
     # 2. RapidFuzz Search
     all_titles = await get_all_titles()
     if not all_titles:
-        return None, 0
+        return {"type": "none", "data": []}
 
-    best_match = process.extractOne(query, all_titles, scorer=fuzz.WRatio)
-    if best_match and best_match[1] >= 60:
-        matched_title = best_match[0]
-        matched_doc = await stories_col.find_one({"title": matched_title})
-        return matched_doc, best_match[1]
+    # Extract top 4 best matches
+    matches = process.extract(
+        query, 
+        all_titles, 
+        scorer=fuzz.WRatio, 
+        limit=4
+    )
 
-    return None, 0
+    # Filter out matches below score threshold of 45
+    filtered_matches = [match[0] for match in matches if match[1] >= 45]
+
+    if not filtered_matches:
+        return {"type": "none", "data": []}
+
+    # If the top match score is very high (>= 85%), return it directly
+    if matches[0][1] >= 85:
+        matched_doc = await stories_col.find_one({"title": matches[0][0]})
+        return {"type": "exact", "data": matched_doc}
+
+    # Otherwise return up to 4 suggestions
+    return {"type": "suggestions", "data": filtered_matches}
+
 
 async def add_request_db(user_id: int, user_name: str, story_name: str):
     """Saves a user story request into database."""
@@ -62,22 +80,23 @@ async def add_request_db(user_id: int, user_name: str, story_name: str):
     }
     await requests_col.insert_one(request_data)
     return True
-    
+
+
 async def delete_single_story_db(query: str):
-    """Deletes a single story document by title or exact match."""
+    """Deletes a single story document by title or search title."""
     clean_query = query.strip().lower()
     
-    # Check and delete by exact search title
+    # Try deleting by search title first
     result = await stories_col.delete_one({"search_title": clean_query})
     if result.deleted_count > 0:
         return True
     
-    # If exact match fails, try deleting by original title
+    # Fallback to exact title match
     result_alt = await stories_col.delete_one({"title": query.strip()})
     return result_alt.deleted_count > 0
+
 
 async def delete_all_stories_db():
     """Deletes all story documents from the database."""
     result = await stories_col.delete_many({})
     return result.deleted_count
-    
