@@ -3,25 +3,57 @@ from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from database.stories_db import search_story_db, stories_col
 
+# --- Helper Function for Background Message Auto-Deletion ---
+async def delete_messages_later(messages_to_delete: list, delay_seconds: int):
+    """Executes message deletion in the background without blocking Pyrogram loop"""
+    await asyncio.sleep(delay_seconds)
+    for msg in messages_to_delete:
+        if msg:
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+
+
 @Client.on_message(
     (filters.group | filters.private) & 
     filters.text & 
     ~filters.command(["start", "addstory", "request", "allstories", "filter", "deletestory", "clearallstories"])
 )
 async def search_handler(bot: Client, message: Message):
+    # Ignore slash commands completely
+    if message.text.startswith("/"):
+        return
+
     user_query = message.text.strip()
-    
-    # Perform Search
+    if len(user_query) < 2:
+        return
+
+    # Perform Word-by-Word & Fuzzy Search
     result = await search_story_db(user_query)
     
     # --- Case 1: Exact / High Confidence Match ---
     if result["type"] == "exact":
         story = result["data"]
-        caption = f"📖 **Story Found:** `{story['title']}`\n\n✨ Tap the button below to play ▶️ the complete story:\n\n⏱️ _This message will auto-delete in 5 minutes._"
-        button = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📖 Play Story", url=story["link"])]
-        ])
+        is_private = message.chat.type.value == "private"
         
+        caption = (
+            f"📖 **Story Found:** `{story['title']}`\n\n"
+            f"✨ Tap the button below to play ▶️ the complete story:\n\n"
+            f"⏱️ _This message will auto-delete in 5 minutes._"
+        )
+        
+        # Private vs Group Redirect Button Setup
+        if is_private:
+            button = InlineKeyboardMarkup([
+                [InlineKeyboardButton("📖 Play Story", url=story["link"])]
+            ])
+        else:
+            bot_username = (await bot.get_me()).username
+            button = InlineKeyboardMarkup([
+                [InlineKeyboardButton("📩 Open Story in PM", url=f"https://t.me/{bot_username}?start=st_{story['_id']}")]
+            ])
+
         reply_msg = None
         try:
             reply_msg = await message.reply_photo(
@@ -36,25 +68,31 @@ async def search_handler(bot: Client, message: Message):
                 disable_web_page_preview=True
             )
 
-        # Auto-Delete Result Message after 5 Minutes (300 Seconds)
-        if reply_msg:
-            await asyncio.sleep(300)
-            try:
-                await reply_msg.delete()
-                # Optionally delete user's search message in group
-                if message.chat.type != "private":
-                    await message.delete()
-            except Exception:
-                pass
+        # Non-blocking Auto-Delete Task (5 Minutes = 300s)
+        to_delete = [reply_msg]
+        if not is_private:
+            to_delete.append(message)  # Delete user search query in group too
 
-    # --- Case 2: Suggestions Found (Up to 4 Buttons) ---
+        asyncio.create_task(delete_messages_later(to_delete, 300))
+
+    # --- Case 2: Suggestions Found (Arranged in 2x2 Grid) ---
     elif result["type"] == "suggestions":
         suggestions = result["data"]
         
+        # 2-2 Buttons Layout Grid Creation
         buttons = []
+        row = []
         for title in suggestions:
-            buttons.append([InlineKeyboardButton(f"📖 {title}", callback_data=f"sg#{title[:25]}")])
+            btn_text = f"📖 {title[:18]}"
+            row.append(InlineKeyboardButton(btn_text, callback_data=f"sg#{title[:25]}"))
             
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+        if row:
+            buttons.append(row)
+
+        buttons.append([InlineKeyboardButton("❌ Close", callback_data="close_all_st")])
         markup = InlineKeyboardMarkup(buttons)
         
         suggestion_msg = await message.reply_text(
@@ -62,17 +100,12 @@ async def search_handler(bot: Client, message: Message):
             reply_markup=markup
         )
 
-        # Auto-Delete Suggestions Message after 2 Minutes (120 Seconds)
-        if suggestion_msg:
-            await asyncio.sleep(120)
-            try:
-                await suggestion_msg.delete()
-            except Exception:
-                pass
+        # Non-blocking Auto-Delete Task (2 Minutes = 120s)
+        asyncio.create_task(delete_messages_later([suggestion_msg], 120))
 
     # --- Case 3: Out of Database / No Matches ---
     else:
-        # Silent Mode: Remain completely silent if no match or suggestions found
+        # Silent Mode: Remain completely silent if no match or suggestions found in DB
         pass
 
 
@@ -87,18 +120,39 @@ async def suggestion_click_callback(bot: Client, query: CallbackQuery):
     if not story:
         return await query.answer("❌ Story no longer exists in database!", show_alert=True)
     
-    caption = f"📖 **Story Found:** `{story['title']}`\n\n✨ Tap the button below to play ▶️ the complete story:\n\n⏱️ _This message will auto-delete in 5 minutes._"
-    button = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📖 Play Story", url=story["link"])]
-    ])
+    # Context Checking: Private vs Group Chat
+    is_private = query.message.chat.type.value == "private"
     
-    # Delete the suggestion message immediately upon button tap
+    if not is_private:
+        bot_username = (await bot.get_me()).username
+        pm_button = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📩 Open in PM / चैट में खोलें", url=f"https://t.me/{bot_username}?start=st_{story['_id']}")]
+        ])
+        await query.answer("📩 Check PM / आपके चैट में भेजने का लिंक तैयार है!", show_alert=True)
+        try:
+            await query.message.edit_text(
+                f"📖 **Story Selected:** `{story['title']}`\n\nClick below to open in Bot PM:",
+                reply_markup=pm_button
+            )
+        except Exception:
+            pass
+        return
+
+    # Delete suggestion box immediately on tap
     try:
         await query.message.delete()
     except Exception:
         pass
 
-    # Send the Result Message
+    caption = (
+        f"📖 **Story Found:** `{story['title']}`\n\n"
+        f"✨ Tap below to play ▶️ the complete story:\n\n"
+        f"⏱️ _This message will auto-delete in 5 minutes._"
+    )
+    button = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📖 Play Story", url=story["link"])]
+    ])
+
     reply_msg = None
     try:
         reply_msg = await bot.send_photo(
@@ -115,10 +169,15 @@ async def suggestion_click_callback(bot: Client, query: CallbackQuery):
             disable_web_page_preview=True
         )
 
-    # Auto-Delete Result Message after 5 Minutes (300 Seconds)
+    # Background Auto-delete task (5 min)
     if reply_msg:
-        await asyncio.sleep(300)
-        try:
-            await reply_msg.delete()
-        except Exception:
-            pass
+        asyncio.create_task(delete_messages_later([reply_msg], 300))
+
+
+# Callback for Close Button
+@Client.on_callback_query(filters.regex("^close_all_st$"))
+async def close_callback(bot: Client, query: CallbackQuery):
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
