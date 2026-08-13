@@ -6,6 +6,7 @@ from script import Script
 from config import Config
 from database.stories_db import add_user_db, stories_col
 
+# PM Standard Start Buttons
 START_BUTTONS = InlineKeyboardMarkup([
     [
         InlineKeyboardButton("📢 Story Channel", url=Config.STORY_CHANNEL),
@@ -17,6 +18,17 @@ START_BUTTONS = InlineKeyboardMarkup([
     ],
     [
         InlineKeyboardButton("👤 Developer", url=Config.OWNER_LINK)
+    ]
+])
+
+# Group Start Buttons
+GROUP_START_BUTTONS = InlineKeyboardMarkup([
+    [
+        InlineKeyboardButton("💬 Support Group", url=Config.SUPPORT_GROUP),
+        InlineKeyboardButton("👤 Owner", url=Config.OWNER_LINK)
+    ],
+    [
+        InlineKeyboardButton("📢 Story Channel", url=Config.STORY_CHANNEL)
     ]
 ])
 
@@ -34,7 +46,7 @@ async def auto_delete_msg(message: Message, delay: int):
         pass
 
 
-# Private Chat /start Handler
+# 1. Private Chat /start Handler
 @Client.on_message(filters.command("start") & filters.private)
 async def private_start_cmd(bot: Client, message: Message):
     user = message.from_user
@@ -68,7 +80,31 @@ async def private_start_cmd(bot: Client, message: Message):
             print(f"⚠️ Log Channel error: {e}")
 
 
-# Callbacks for About and Help
+# 2. Group /start Handler (Separate Handler)
+@Client.on_message(filters.command("start") & ~filters.private)
+async def group_start_cmd(bot: Client, message: Message):
+    user = message.from_user
+    chat = message.chat
+
+    group_text = (
+        f"👋 **Hello {user.mention}! Welcome to {chat.title}!**\n\n"
+        f"I am active here to help you search and find your favorite stories. "
+        f"Just type any story name directly in this group to search!\n\n"
+        f"⏱️ _This message will auto-delete in 2 minutes._"
+    )
+
+    group_msg = await message.reply_text(
+        text=group_text,
+        reply_markup=GROUP_START_BUTTONS,
+        disable_web_page_preview=True
+    )
+
+    # Auto-delete group start message & user command after 2 minutes (120s)
+    asyncio.create_task(auto_delete_msg(group_msg, 120))
+    asyncio.create_task(auto_delete_msg(message, 120))
+
+
+# 3. Callbacks for About and Help
 @Client.on_callback_query()
 async def cb_handler(bot: Client, query: CallbackQuery):
     data = query.data
