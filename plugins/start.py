@@ -23,14 +23,30 @@ BACK_BUTTON = InlineKeyboardMarkup([
 
 @Client.on_message(filters.command("start") & filters.private)
 async def start_cmd(bot: Client, message: Message):
+    user = message.from_user
+    
+    # 1. Reply to User
     await message.reply_text(
         text=Script.START_TXT.format(
-            mention=message.from_user.mention,
-            user_id=message.from_user.id
+            mention=user.mention,
+            user_id=user.id
         ),
         reply_markup=START_BUTTONS,
         disable_web_page_preview=True
     )
+
+    # 2. Send User Log Notification to LOG_CHANNEL
+    if Config.LOG_CHANNEL:
+        try:
+            log_text = (
+                f"👤 **New User Started Bot!**\n\n"
+                f"✨ **Name:** {user.mention}\n"
+                f"🆔 **User ID:** `{user.id}`\n"
+                f"👤 **Username:** @{user.username if user.username else 'None'}"
+            )
+            await bot.send_message(chat_id=Config.LOG_CHANNEL, text=log_text)
+        except Exception as e:
+            print(f"⚠️ Log Channel error: {e}")
 
 @Client.on_callback_query()
 async def cb_handler(bot: Client, query: CallbackQuery):
