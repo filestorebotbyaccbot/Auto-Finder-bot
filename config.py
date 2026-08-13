@@ -17,7 +17,7 @@ class Config:
     REQUESTS_COLLECTION = os.environ.get("REQUESTS_COLLECTION", "story_requests")
     
     # --- Log Channel & Bot Configurations ---
-    LOG_CHANNEL = int(os.environ.get("LOG_CHANNEL", "-1001234567890"))
+    LOG_CHANNEL = int(os.environ.get("LOG_CHANNEL", "-1003961183518"))
     PORT = int(os.environ.get("PORT", "8080"))
     ADMIN_IDS = [int(x) for x in os.environ.get("ADMIN_IDS", "12345678").split()]
     STORY_CHANNEL = os.environ.get("STORY_CHANNEL", "https://t.me/freestoryhubMR")
