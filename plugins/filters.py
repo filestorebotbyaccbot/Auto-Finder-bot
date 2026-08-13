@@ -1,7 +1,48 @@
+import math
 from pyrogram import Client, filters
-from pyrogram.types import Message
-from database.stories_db import get_all_titles
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from database.stories_db import get_all_titles, stories_col
 
+ITEMS_PER_PAGE = 10  # 10 Buttons per page limit
+
+def get_stories_keyboard(titles_list, page=0):
+    total_items = len(titles_list)
+    total_pages = math.ceil(total_items / ITEMS_PER_PAGE) if total_items > 0 else 1
+    
+    # Keep page within boundaries
+    page = max(0, min(page, total_pages - 1))
+    
+    start = page * ITEMS_PER_PAGE
+    end = start + ITEMS_PER_PAGE
+    current_page_titles = titles_list[start:end]
+    
+    keyboard = []
+    
+    # 1. Add 10 Story Buttons
+    for title in current_page_titles:
+        # Callback data embeds title snippet
+        keyboard.append([InlineKeyboardButton(f"📖 {title}", callback_data=f"all_st#{title[:25]}")])
+    
+    # 2. Add Navigation Row (Back | Close | Next)
+    nav_row = []
+    
+    # Back Button (Hide on 1st page)
+    if page > 0:
+        nav_row.append(InlineKeyboardButton("⬅️ Back", callback_data=f"all_page#{page - 1}"))
+    
+    # Close Button (Always visible)
+    nav_row.append(InlineKeyboardButton("❌ Close", callback_data="close_all_st"))
+    
+    # Next Button (Hide on last page)
+    if page < total_pages - 1:
+        nav_row.append(InlineKeyboardButton("Next ➡️", callback_data=f"all_page#{page + 1}"))
+    
+    keyboard.append(nav_row)
+    
+    return InlineKeyboardMarkup(keyboard), page + 1, total_pages
+
+
+# 1. Main Command Handler (/allstories & /filter)
 @Client.on_message(filters.command(["allstories", "filter"]))
 async def list_stories_handler(bot: Client, message: Message):
     titles = await get_all_titles()
@@ -9,10 +50,68 @@ async def list_stories_handler(bot: Client, message: Message):
     if not titles:
         return await message.reply_text("📚 **No stories found in database!**")
     
-    text = "📚 **Available Stories List:**\n"
-    text += "*(Tap any story name below to copy it instantly)*\n\n"
+    markup, current_page, total_pages = get_stories_keyboard(titles, page=0)
     
-    for idx, title in enumerate(titles, 1):
-        text += f"{idx}. `{title}`\n"
-        
-    await message.reply_text(text)
+    await message.reply_text(
+        text=f"📚 **Available Stories List (Page {current_page}/{total_pages}):**\n\nTap any story button below to play ▶️:",
+        reply_markup=markup
+    )
+
+
+# 2. Callback Handler for Pagination Buttons (Next / Back)
+@Client.on_callback_query(filters.regex(r"^all_page#"))
+async def stories_pagination_callback(bot: Client, query: CallbackQuery):
+    target_page = int(query.data.split("#")[1])
+    titles = await get_all_titles()
+    
+    if not titles:
+        return await query.answer("❌ No stories found!", show_alert=True)
+    
+    markup, current_page, total_pages = get_stories_keyboard(titles, page=target_page)
+    
+    await query.message.edit_text(
+        text=f"📚 **Available Stories List (Page {current_page}/{total_pages}):**\n\nTap any story button below to play ▶️:",
+        reply_markup=markup
+    )
+    await query.answer()
+
+
+# 3. Callback Handler for Story Button Selection
+@Client.on_callback_query(filters.regex(r"^all_st#"))
+async def story_item_click_callback(bot: Client, query: CallbackQuery):
+    selected_title = query.data.split("#", 1)[1]
+    
+    # Fetch story details from MongoDB
+    story = await stories_col.find_one({"title": selected_title})
+    
+    if not story:
+        return await query.answer("❌ Story no longer exists!", show_alert=True)
+    
+    caption = f"📖 **Story Found:** `{story['title']}`\n\n✨ Tap the button below to play ▶️ the complete story:"
+    button = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📖 Play Story", url=story["link"])]
+    ])
+    
+    try:
+        await query.message.reply_photo(
+            photo=story["photo"],
+            caption=caption,
+            reply_markup=button
+        )
+    except Exception:
+        await query.message.reply_text(
+            text=caption,
+            reply_markup=button,
+            disable_web_page_preview=True
+        )
+    await query.answer()
+
+
+# 4. Callback Handler for Close Button
+@Client.on_callback_query(filters.regex(r"^close_all_st$"))
+async def close_menu_callback(bot: Client, query: CallbackQuery):
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+    await query.answer("Closed!")
