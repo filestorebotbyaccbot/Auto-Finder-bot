@@ -8,7 +8,7 @@ class Config:
     
     # --- Source Channels for Auto-Indexing (IDs usually start with -100) ---
     # Example: "-1001234567890 -1009876543210"
-    SOURCE_CHANNELS = [int(x) for x in os.environ.get("SOURCE_CHANNELS", "-1001234567890").split()]
+    SOURCE_CHANNELS = [int(x) for x in os.environ.get("SOURCE_CHANNELS", "-1003967446213").split()]
     
     # --- Database Settings ---
     MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://user:pass@cluster.mongodb.net/?retryWrites=true&w=majority")
