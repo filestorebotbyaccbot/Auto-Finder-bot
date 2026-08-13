@@ -5,7 +5,7 @@ from script import Script
 from config import Config
 from database.stories_db import add_user_db, set_welcome_db, get_welcome_db
 
-# --- Standard Buttons ---
+# --- 1. Private Chat (PM) Buttons ---
 START_BUTTONS = InlineKeyboardMarkup([
     [
         InlineKeyboardButton("📢 Story Channel", url=Config.STORY_CHANNEL),
@@ -20,6 +20,7 @@ START_BUTTONS = InlineKeyboardMarkup([
     ]
 ])
 
+# --- 2. Group Chat Buttons ---
 GROUP_START_BUTTONS = InlineKeyboardMarkup([
     [
         InlineKeyboardButton("💬 Support Group", url=Config.SUPPORT_GROUP),
@@ -35,32 +36,21 @@ BACK_BUTTON = InlineKeyboardMarkup([
 ])
 
 
-# --- 1. /start Command (Private & Group Support) ---
-@Client.on_message(filters.command("start"))
-async def start_cmd(bot: Client, message: Message):
+# =====================================================================
+# 1. Private Start Handler (Only triggers in Bot PM)
+# =====================================================================
+@Client.on_message(filters.command("start") & filters.private)
+async def private_start_cmd(bot: Client, message: Message):
     user = message.from_user
-    chat = message.chat
-    
-    # --- IF USED IN GROUP ---
-    if chat.type != "private":
-        welcome_text = (
-            f"👋 **Welcome to {chat.title}!**\n\n"
-            f"Hello {user.mention}, I am active here to help you search and play your favorite stories! "
-            f"Just type any story name in this group to search."
-        )
-        return await message.reply_text(
-            text=welcome_text,
-            reply_markup=GROUP_START_BUTTONS,
-            disable_web_page_preview=True
-        )
 
-    # --- IF USED IN PRIVATE CHAT ---
+    # Save User to MongoDB for Broadcasting
     await add_user_db(
         user_id=user.id,
         first_name=user.first_name,
         username=user.username
     )
 
+    # Reply PM Text with About & Help Buttons
     await message.reply_text(
         text=Script.START_TXT.format(
             mention=user.mention,
@@ -70,7 +60,7 @@ async def start_cmd(bot: Client, message: Message):
         disable_web_page_preview=True
     )
 
-    # Log Channel Notification
+    # Log Channel Alert
     if Config.LOG_CHANNEL:
         try:
             log_text = (
@@ -84,68 +74,104 @@ async def start_cmd(bot: Client, message: Message):
             print(f"⚠️ Log Channel error: {e}")
 
 
-# --- 2. Admin Command to Set Custom Welcome Message ---
+# =====================================================================
+# 2. Group Start Handler (Only triggers in Groups)
+# =====================================================================
+@Client.on_message(filters.command("start") & ~filters.private)
+async def group_start_cmd(bot: Client, message: Message):
+    user = message.from_user
+    chat = message.chat
+
+    group_text = (
+        f"👋 **Welcome to {chat.title}!**\n\n"
+        f"Hello {user.mention}, I am active here to help you search and play your favorite stories! "
+        f"Just type any story name in this group to search."
+    )
+    
+    await message.reply_text(
+        text=group_text,
+        reply_markup=GROUP_START_BUTTONS,
+        disable_web_page_preview=True
+    )
+
+
+# =====================================================================
+# 3. Set Custom Welcome Message Command (Group Admin Only)
+# =====================================================================
 @Client.on_message(filters.command("setwelcome") & ~filters.private)
 async def set_custom_welcome(bot: Client, message: Message):
-    # Check if user is Group Admin
-    user_status = await message.chat.get_member(message.from_user.id)
-    if user_status.status not in [ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR]:
-        return await message.reply_text("⛔ **Only Group Admins can set welcome messages!**")
+    try:
+        # Admin Rights Check
+        user_member = await message.chat.get_member(message.from_user.id)
+        if user_member.status not in [ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR]:
+            return await message.reply_text("⛔ **Only Group Admins can set welcome messages!**")
 
-    # Extract Custom Text
-    if len(message.command) < 2:
-        return await message.reply_text(
-            "⚠️ **उपयोग करने का तरीका:**\n\n"
-            "`/setwelcome Welcome {mention} to {chat}! Enjoy reading stories here.`\n\n"
-            "💡 **Shortcodes:**\n"
-            "• `{mention}` - User mention\n"
-            "• `{name}` - User First Name\n"
-            "• `{chat}` - Group Name"
-        )
+        # Command Text Extraction
+        if len(message.command) < 2:
+            return await message.reply_text(
+                "⚠️ **उपयोग करने का तरीका:**\n\n"
+                "`/setwelcome Welcome {mention} to {chat}! Enjoy reading stories here.`\n\n"
+                "💡 **Available Variables:**\n"
+                "• `{mention}` - User link\n"
+                "• `{name}` - First name\n"
+                "• `{chat}` - Group Name"
+            )
 
-    custom_text = message.text.split(None, 1)[1]
-    await set_welcome_db(message.chat.id, custom_text)
-    
-    await message.reply_text("✅ **Custom Welcome Message successfully updated for this group!**")
+        custom_text = message.text.split(None, 1)[1]
+        await set_welcome_db(message.chat.id, custom_text)
+        
+        await message.reply_text("✅ **Custom Welcome Message successfully updated for this group!**")
+
+    except Exception as e:
+        print(f"⚠️ Set Welcome Error: {e}")
+        await message.reply_text(f"❌ **Error:** `{e}`\n\n*(Make sure I am Admin in this group)*")
 
 
-# --- 3. New Member Auto-Welcome Handler ---
+# =====================================================================
+# 4. New Member Auto-Welcome Handler
+# =====================================================================
 @Client.on_chat_member_updated()
 async def auto_welcome_new_members(bot: Client, event: ChatMemberUpdated):
-    # Trigger only when a new member joins/is added
-    if event.old_chat_member is None and event.new_chat_member is not None:
-        user = event.new_chat_member.user
-        chat = event.chat
-        
-        # Don't welcome bots
-        if user.is_bot:
-            return
+    try:
+        # Detect new member joining
+        if (
+            (event.old_chat_member is None or event.old_chat_member.status == ChatMemberStatus.BANNED) 
+            and event.new_chat_member is not None 
+            and event.new_chat_member.status == ChatMemberStatus.MEMBER
+        ):
+            user = event.new_chat_member.user
+            chat = event.chat
+            
+            if user.is_bot:
+                return
 
-        custom_text = await get_welcome_db(chat.id)
-        
-        if custom_text:
-            text = custom_text.format(
-                mention=user.mention,
-                name=user.first_name,
-                chat=chat.title
-            )
-        else:
-            text = (
-                f"👋 Welcome {user.mention} to **{chat.title}**! ✨\n\n"
-                f"Enjoy your stay and search for stories anytime!"
-            )
+            custom_text = await get_welcome_db(chat.id)
+            
+            if custom_text:
+                text = custom_text.format(
+                    mention=user.mention,
+                    name=user.first_name,
+                    chat=chat.title
+                )
+            else:
+                text = (
+                    f"👋 Welcome {user.mention} to **{chat.title}**! ✨\n\n"
+                    f"Enjoy your stay and search for stories anytime!"
+                )
 
-        try:
             await bot.send_message(
                 chat_id=chat.id,
                 text=text,
-                reply_markup=GROUP_START_BUTTONS
+                reply_markup=GROUP_START_BUTTONS,
+                disable_web_page_preview=True
             )
-        except Exception as e:
-            print(f"⚠️ Welcome error: {e}")
+    except Exception as e:
+        print(f"⚠️ Welcome Handler Error: {e}")
 
 
-# --- 4. Callback Query Handler ---
+# =====================================================================
+# 5. Callback Query Handler (About / Help / Home Buttons)
+# =====================================================================
 @Client.on_callback_query()
 async def cb_handler(bot: Client, query: CallbackQuery):
     data = query.data
