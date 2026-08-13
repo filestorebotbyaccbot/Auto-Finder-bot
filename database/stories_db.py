@@ -62,4 +62,21 @@ async def add_request_db(user_id: int, user_name: str, story_name: str):
     }
     await requests_col.insert_one(request_data)
     return True
-  
+  async def delete_single_story_db(query: str):
+    """Deletes a single story document by title or exact match."""
+    clean_query = query.strip().lower()
+    
+    # Check and delete by exact search title
+    result = await stories_col.delete_one({"search_title": clean_query})
+    if result.deleted_count > 0:
+        return True
+    
+    # If exact match fails, try deleting by original title
+    result_alt = await stories_col.delete_one({"title": query.strip()})
+    return result_alt.deleted_count > 0
+
+async def delete_all_stories_db():
+    """Deletes all story documents from the database."""
+    result = await stories_col.delete_many({})
+    return result.deleted_count
+    
