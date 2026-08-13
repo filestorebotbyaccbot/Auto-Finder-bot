@@ -1,6 +1,6 @@
 import logging
 from pyrogram import Client
-import pyromod  # Enables .ask() for conversation state
+import pyromod
 from aiohttp import web
 from config import Config
 from web.render_server import web_server
@@ -19,6 +19,17 @@ if __name__ == "__main__":
     app.start()
     print("🚀 VC Story Finder Bot Client Started!")
     
+    # Send Restart/Live Notification to Log Channel
+    if Config.LOG_CHANNEL:
+        try:
+            me = app.get_me()
+            app.send_message(
+                chat_id=Config.LOG_CHANNEL,
+                text=f"⚡ **{me.mention} is now LIVE & Running!**\n\n🆔 **Bot ID:** `{me.id}`\n🌐 **Server:** Render Web Service (Port {Config.PORT})"
+            )
+        except Exception as e:
+            print(f"⚠️ Failed to send log to LOG_CHANNEL: {e}")
+
     # Initialize Port 8080 Keep-Alive Web Server for Render
     web_app = app.loop.run_until_complete(web_server())
     site = web.TCPSite(web.AppRunner(web_app), "0.0.0.0", Config.PORT)
