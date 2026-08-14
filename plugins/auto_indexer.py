@@ -3,7 +3,31 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 from pyrogram.enums import MessageEntityType
 from config import Config
-from database.stories_db import add_story_db
+from database.stories_db import add_story_with_category_db
+
+
+def extract_category_from_text(text: str) -> str:
+    """
+    Extracts category from caption/text using 'Category: Name' format or '#Hashtag'.
+    Defaults to 'General' if not found.
+    """
+    if not text:
+        return "General"
+
+    # 1. Check for 'Category: Romance' or 'Category : Drama'
+    cat_match = re.search(r"(?i)category\s*:\s*([^\n]+)", text)
+    if cat_match:
+        return cat_match.group(1).strip().capitalize()
+
+    # 2. Check for Hashtags (#Romance, #Horror)
+    hashtags = re.findall(r"#(\w+)", text)
+    if hashtags:
+        ignore_tags = ["story", "channel", "post", "update", "read", "link"]
+        valid_tags = [tag.capitalize() for tag in hashtags if tag.lower() not in ignore_tags]
+        if valid_tags:
+            return valid_tags[0]
+
+    return "General"
 
 
 def extract_custom_link(message: Message) -> str:
@@ -46,28 +70,32 @@ def extract_custom_link(message: Message) -> str:
 async def auto_index_channel_posts(bot: Client, message: Message):
     """
     Automatically detects new posts in specified source channels,
-    extracts the first line as Title, fetches Custom or Post Link, and indexes into MongoDB.
+    extracts first line as Title, Category, fetches Custom or Post Link, and indexes into MongoDB.
     """
     caption_or_text = message.caption or message.text
     
     if not caption_or_text:
         return
     
-    # Extract ONLY the first line of text/caption as searchable title
+    # Strictly extract ONLY the first line as Title
     raw_title = caption_or_text.strip()
     clean_title = raw_title.split("\n")[0].strip()
     
-    # Extract Photo File ID (or fallback placeholder if plain text post)
+    # Extract Category automatically
+    story_category = extract_category_from_text(caption_or_text)
+
+    # Extract Photo File ID (or fallback default banner)
     photo_id = message.photo.file_id if message.photo else "https://telegra.ph/file/default_banner.jpg"
     
-    # Extract Custom Link (or default channel post link)
+    # Extract Custom Link or Default Channel Post Link
     final_story_link = extract_custom_link(message)
         
-    # Save into MongoDB
-    await add_story_db(
+    # Save into MongoDB with Category
+    await add_story_with_category_db(
         title=clean_title,
         photo=photo_id,
-        link=final_story_link
+        link=final_story_link,
+        category=story_category
     )
     
     # Send Notification to Log Channel
@@ -76,6 +104,7 @@ async def auto_index_channel_posts(bot: Client, message: Message):
             log_text = (
                 f"⚡ **Auto-Indexed New Story!**\n\n"
                 f"📌 **Title:** `{clean_title}`\n"
+                f"🏷️ **Category:** `{story_category}`\n"
                 f"📢 **Channel:** {message.chat.title}\n"
                 f"🔗 **Saved Link:** {final_story_link}"
             )
