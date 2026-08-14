@@ -14,7 +14,7 @@ START_BUTTONS = InlineKeyboardMarkup([
     ],
     [
         InlineKeyboardButton("ℹ️ About", callback_data="about_cb"),
-        InlineKeyboardButton("🛠️ Help", callback_data="help_cb", enums.ButtonStyle.SUCCESS))
+        InlineKeyboardButton("🛠️ Help", callback_data="help_cb", enums.ButtonStyle.SUCCESS)
     ],
     [
         InlineKeyboardButton("👤 Developer", url=Config.OWNER_LINK)
