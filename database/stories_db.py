@@ -80,6 +80,20 @@ async def search_story_db(query: str):
     if not all_titles:
         return {"type": "none", "data": []}
 
+async def get_stories_by_category_paged_db(category_name: str, page: int = 1, page_size: int = 5):
+    """Fetches stories matching a category with pagination support."""
+    skip = (page - 1) * page_size
+    
+    # Fetch total count for page calculation
+    total_count = await stories_col.count_documents({"category": category_name})
+    
+    stories = []
+    async for doc in stories_col.find({"category": category_name}).skip(skip).limit(page_size):
+        stories.append(doc)
+        
+    return stories, total_count
+    
+
 
     # Extract top 4 best matches
     matches = process.extract(
