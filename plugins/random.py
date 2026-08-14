@@ -1,0 +1,100 @@
+from pyrogram import Client, filters
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram.enums import ParseMode
+from database.stories_db import get_random_story_db
+from search import build_aesthetic_caption, delete_messages_later
+from languages import get_str  # अगर Multi-Language सिस्टम यूज़ कर रहे हैं
+import asyncio
+
+@Client.on_message(filters.command(["random", "surpriseme"]) & (filters.group | filters.private))
+async def random_story_handler(bot: Client, message: Message):
+    """
+    Fetches and displays a random story with 'Another Random' button.
+    """
+    story = await get_random_story_db()
+    
+    if not story:
+        return await message.reply_text("❌ **डेटाबेस में कोई स्टोरी उपलब्ध नहीं है!**")
+
+    # Photo/Caption UI Build करें
+    caption = build_aesthetic_caption(story)
+
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎧 Listen / Play Story", url=story["link"])],
+        [
+            InlineKeyboardButton("🎲 Next Random", callback_data="fetch_next_random"),
+            InlineKeyboardButton("❌ Close", callback_data="close_all_st")
+        ]
+    ])
+
+    reply_msg = None
+    try:
+        reply_msg = await message.reply_photo(
+            photo=story["photo"],
+            caption=caption,
+            reply_markup=buttons,
+            parse_mode=ParseMode.HTML
+        )
+    except Exception:
+        reply_msg = await message.reply_text(
+            text=caption,
+            reply_markup=buttons,
+            disable_web_page_preview=True,
+            parse_mode=ParseMode.HTML
+        )
+
+    # 5 मिनट में ऑटो-डिलीट (Optional)
+    to_delete = [reply_msg]
+    if message.chat.type.value != "private":
+        to_delete.append(message)
+
+    asyncio.create_task(delete_messages_later(to_delete, 300))
+
+
+# --- Callback Query for "🎲 Next Random" Button ---
+@Client.on_callback_query(filters.regex("^fetch_next_random$"))
+async def next_random_callback(bot: Client, query: CallbackQuery):
+    story = await get_random_story_db()
+    
+    if not story:
+        return await query.answer("❌ कोई अन्य स्टोरी नहीं मिली!", show_alert=True)
+
+    caption = build_aesthetic_caption(story)
+
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎧 Listen / Play Story", url=story["link"])],
+        [
+            InlineKeyboardButton("🎲 Next Random", callback_data="fetch_next_random"),
+            InlineKeyboardButton("❌ Close", callback_data="close_all_st")
+        ]
+    ])
+
+    try:
+        # फोटो और कैप्शन अपडेट करें
+        if query.message.photo:
+            await query.message.edit_media(
+                media=InputMediaPhoto(media=story["photo"], caption=caption, parse_mode=ParseMode.HTML),
+                reply_markup=buttons
+            )
+        else:
+            await query.message.edit_text(
+                text=caption,
+                reply_markup=buttons,
+                disable_web_page_preview=True,
+                parse_mode=ParseMode.HTML
+            )
+        await query.answer("🎲 New Random Story Loaded!")
+    except Exception:
+        # अगर मीडिया एडिट में दिक्कत आए तो पुराना डिलीट करके नया भेजें
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+            
+        await bot.send_photo(
+            chat_id=query.message.chat.id,
+            photo=story["photo"],
+            caption=caption,
+            reply_markup=buttons,
+            parse_mode=ParseMode.HTML
+        )
