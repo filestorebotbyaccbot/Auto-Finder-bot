@@ -14,7 +14,7 @@ async def delete_msg_later(msg: Message, delay: int = 120):
 
 
 # /categories or /filter Command
-@Client.on_message(filters.command(["categories", "filter"]) & (filters.group | filters.private))
+@Client.on_message(filters.command(["categories", "filters"]) & (filters.group | filters.private))
 async def show_categories_cmd(bot: Client, message: Message):
     categories = await get_all_categories_db()
 
