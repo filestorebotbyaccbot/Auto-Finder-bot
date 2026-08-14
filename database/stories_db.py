@@ -1,9 +1,19 @@
-from database.db import db, stories_col, requests_col
+import re
 from rapidfuzz import process, fuzz
+from database.db import db, stories_col, requests_col
 
 # Collections
 users_col = db["bot_users"]
 
+
+# --- Text Normalization Helper Function ---
+
+def clean_text_for_search(text: str) -> str:
+    """Removes special symbols and extra spaces for 100% accurate search matching."""
+    if not text:
+        return ""
+    text = re.sub(r'[^\w\s]', ' ', str(text).lower())
+    return " ".join(text.split())
 
 
 # --- User Collection Helper Functions (For Broadcast) ---
@@ -36,7 +46,6 @@ async def get_all_users_db():
 
 async def add_story_db(title: str, photo: str, link: str, description: str = ""):
     """Inserts or updates a story document into MongoDB."""
-    # Store strictly the first line as the title
     clean_title = title.strip().split("\n")[0]
     
     story_data = {
@@ -44,7 +53,28 @@ async def add_story_db(title: str, photo: str, link: str, description: str = "")
         "photo": photo,
         "link": link,
         "description": description,
-        "search_title": clean_title.lower()
+        "search_title": clean_text_for_search(clean_title)
+    }
+    
+    await stories_col.update_one(
+        {"search_title": story_data["search_title"]},
+        {"$set": story_data},
+        upsert=True
+    )
+    return True
+
+
+async def add_story_with_category_db(title: str, photo: str, link: str, category: str = "General", description: str = ""):
+    """Inserts or updates a story document with Category."""
+    clean_title = title.strip().split("\n")[0]
+    
+    story_data = {
+        "title": clean_title,
+        "photo": photo,
+        "link": link,
+        "category": category.strip().capitalize(),
+        "description": description,
+        "search_title": clean_text_for_search(clean_title)
     }
     
     await stories_col.update_one(
@@ -59,32 +89,85 @@ async def get_all_titles():
     """Fetches all story titles from MongoDB."""
     titles = []
     async for doc in stories_col.find({}, {"title": 1}):
-        if "title" in doc:
+        if "title" in doc and doc["title"]:
             titles.append(doc["title"])
     return titles
 
 
+# --- 🔍 ENHANCED SEARCH & SUGGESTION SYSTEM ---
+
 async def search_story_db(query: str):
     """
-    Performs Exact Match + RapidFuzz Top 4 Suggestions search against MongoDB story titles.
+    Performs Exact Match + Advanced RapidFuzz Top 4 Suggestions Search.
     """
-    clean_query = query.strip().lower()
+    raw_query = query.strip()
+    clean_query = clean_text_for_search(raw_query)
     
-    # 1. Exact Match Check
+    if not clean_query:
+        return {"type": "none", "data": []}
+
+    # 1. Direct Search Title Exact Match Check
     exact_match = await stories_col.find_one({"search_title": clean_query})
     if exact_match:
         return {"type": "exact", "data": exact_match}
 
-    # 2. RapidFuzz Search
+    # 2. Fetch all DB titles
     all_titles = await get_all_titles()
     if not all_titles:
         return {"type": "none", "data": []}
+
+    # Cleaned map of titles for accurate fuzz comparison
+    cleaned_titles_map = {title: clean_text_for_search(title) for title in all_titles}
+
+    # 3. RapidFuzz Extraction using token_set_ratio (handles partial/shuffled words perfectly)
+    matches = process.extract(
+        clean_query, 
+        cleaned_titles_map, 
+        scorer=fuzz.token_set_ratio, 
+        limit=4
+    )
+
+    # High Confidence Match (>= 85%) -> Open Direct Story
+    if matches and matches[0][1] >= 85:
+        matched_original_title = matches[0][2]
+        matched_doc = await stories_col.find_one({"title": matched_original_title})
+        if matched_doc:
+            return {"type": "exact", "data": matched_doc}
+
+    # Suggestions Threshold (>= 30% score to prevent missing minor queries)
+    filtered_matches = []
+    for match in matches:
+        score = match[1]
+        original_title = match[2]
+        if score >= 30:
+            filtered_matches.append(original_title)
+
+    if not filtered_matches:
+        return {"type": "none", "data": []}
+
+    return {"type": "suggestions", "data": filtered_matches}
+
+
+# --- Category & Pagination Helper Functions ---
+
+async def get_all_categories_db():
+    """Fetches list of all unique categories from database."""
+    categories = await stories_col.distinct("category")
+    return [cat for cat in categories if cat]
+
+
+async def get_stories_by_category_db(category_name: str, limit: int = 10):
+    """Fetches stories matching a specific category."""
+    stories = []
+    async for doc in stories_col.find({"category": category_name}).limit(limit):
+        stories.append(doc)
+    return stories
+
 
 async def get_stories_by_category_paged_db(category_name: str, page: int = 1, page_size: int = 5):
     """Fetches stories matching a category with pagination support."""
     skip = (page - 1) * page_size
     
-    # Fetch total count for page calculation
     total_count = await stories_col.count_documents({"category": category_name})
     
     stories = []
@@ -92,30 +175,27 @@ async def get_stories_by_category_paged_db(category_name: str, page: int = 1, pa
         stories.append(doc)
         
     return stories, total_count
-    
 
 
-    # Extract top 4 best matches
-    matches = process.extract(
-        query, 
-        all_titles, 
-        scorer=fuzz.WRatio, 
-        limit=4
-    )
-
-    # Filter out matches below score threshold of 45
-    filtered_matches = [match[0] for match in matches if match[1] >= 45]
-
-    if not filtered_matches:
-        return {"type": "none", "data": []}
-
-    # If the top match score is very high (>= 85%), return it directly
-    if matches[0][1] >= 85:
-        matched_doc = await stories_col.find_one({"title": matches[0][0]})
-        return {"type": "exact", "data": matched_doc}
-
-    # Otherwise return up to 4 suggestions
-    return {"type": "suggestions", "data": filtered_matches}
+async def get_top_categories_db(limit: int = 6):
+    """Safely fetches top categories sorted by the number of stories."""
+    try:
+        pipeline = [
+            {"$match": {"category": {"$ne": None, "$exists": True}}},
+            {"$group": {"_id": "$category", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": limit}
+        ]
+        
+        top_categories = []
+        async for doc in stories_col.aggregate(pipeline):
+            if doc and "_id" in doc and doc["_id"]:
+                top_categories.append({"category": str(doc["_id"]), "count": doc["count"]})
+                
+        return top_categories
+    except Exception as e:
+        print(f"❌ [DB TOP CAT ERROR]: {e}")
+        return []
 
 
 # --- Request Collection Helper Functions ---
@@ -136,9 +216,9 @@ async def add_request_db(user_id: int, user_name: str, story_name: str):
 
 async def delete_single_story_db(query: str):
     """Deletes a single story document by title or search title."""
-    clean_query = query.strip().lower()
+    clean_query = clean_text_for_search(query)
     
-    # Try deleting by search title first
+    # Try deleting by search_title
     result = await stories_col.delete_one({"search_title": clean_query})
     if result.deleted_count > 0:
         return True
@@ -152,6 +232,7 @@ async def delete_all_stories_db():
     """Deletes all story documents from the database."""
     result = await stories_col.delete_many({})
     return result.deleted_count
+
 
 # --- Statistics Helper Functions ---
 
@@ -168,57 +249,3 @@ async def get_total_stories_count():
 async def get_total_requests_count():
     """Returns the total number of pending story requests."""
     return await requests_col.count_documents({"status": "pending"})
-
-
-# --- Category Helper Functions ---
-
-async def add_story_with_category_db(title: str, photo: str, link: str, category: str = "General", description: str = ""):
-    """Inserts or updates a story document with Category."""
-    clean_title = title.strip().split("\n")[0]
-    
-    story_data = {
-        "title": clean_title,
-        "photo": photo,
-        "link": link,
-        "category": category.strip().capitalize(),
-        "description": description,
-        "search_title": clean_title.lower()
-    }
-    
-    await stories_col.update_one(
-        {"search_title": story_data["search_title"]},
-        {"$set": story_data},
-        upsert=True
-    )
-    return True
-
-
-async def get_all_categories_db():
-    """Fetches list of all unique categories from database."""
-    categories = await stories_col.distinct("category")
-    return [cat for cat in categories if cat]
-
-
-async def get_stories_by_category_db(category_name: str, limit: int = 10):
-    """Fetches stories matching a specific category."""
-    stories = []
-    async for doc in stories_col.find({"category": category_name}).limit(limit):
-        stories.append(doc)
-    return stories
-
-
-async def get_top_categories_db(limit: int = 6):
-    """Fetches categories sorted by the number of stories they contain."""
-    pipeline = [
-        {"$group": {"_id": "$category", "count": {"$sum": 1}}},
-        {"$sort": {"count": -1}},
-        {"$limit": limit}
-    ]
-    
-    top_categories = []
-    async for doc in stories_col.aggregate(pipeline):
-        if doc["_id"]:
-            top_categories.append({"category": doc["_id"], "count": doc["count"]})
-            
-    return top_categories
-    
