@@ -154,4 +154,41 @@ async def get_total_stories_count():
 async def get_total_requests_count():
     """Returns the total number of pending story requests."""
     return await requests_col.count_documents({"status": "pending"})
+
+
+# --- Category Helper Functions ---
+
+async def add_story_with_category_db(title: str, photo: str, link: str, category: str = "General", description: str = ""):
+    """Inserts or updates a story document with Category."""
+    clean_title = title.strip().split("\n")[0]
+    
+    story_data = {
+        "title": clean_title,
+        "photo": photo,
+        "link": link,
+        "category": category.strip().capitalize(),
+        "description": description,
+        "search_title": clean_title.lower()
+    }
+    
+    await stories_col.update_one(
+        {"search_title": story_data["search_title"]},
+        {"$set": story_data},
+        upsert=True
+    )
+    return True
+
+
+async def get_all_categories_db():
+    """Fetches list of all unique categories from database."""
+    categories = await stories_col.distinct("category")
+    return [cat for cat in categories if cat]
+
+
+async def get_stories_by_category_db(category_name: str, limit: int = 10):
+    """Fetches stories matching a specific category."""
+    stories = []
+    async for doc in stories_col.find({"category": category_name}).limit(limit):
+        stories.append(doc)
+    return stories
     
