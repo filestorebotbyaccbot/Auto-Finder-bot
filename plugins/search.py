@@ -1,15 +1,18 @@
 import math
 import asyncio
+from bson.objectid import ObjectId
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from database.stories_db import (
     search_story_db, 
     stories_col, 
     get_all_categories_db, 
-    get_stories_by_category_paged_db
+    get_stories_by_category_paged_db,
+    get_top_categories_db
 )
 
 PAGE_SIZE = 5  # एक पेज पर कितनी स्टोरीज दिखेंगी
+
 
 # --- Helper Function for Background Message Auto-Deletion ---
 async def delete_messages_later(messages_to_delete: list, delay_seconds: int):
@@ -48,10 +51,11 @@ def build_category_keyboard(stories: list, category_name: str, page: int, total_
     return InlineKeyboardMarkup(buttons)
 
 
+# --- 🔍 MAIN SEARCH & CATEGORY HANDLER ---
 @Client.on_message(
     (filters.group | filters.private) & 
     filters.text & 
-    ~filters.command(["start", "addstory", "request", "allstories", "filter", "categories", "deletestory", "clearallstories"])
+    ~filters.command(["start", "addstory", "request", "allstories", "filter", "categories", "top", "topcategories", "deletestory", "clearallstories", "stats"])
 )
 async def search_handler(bot: Client, message: Message):
     user_query = message.text.strip()
@@ -151,6 +155,46 @@ async def search_handler(bot: Client, message: Message):
         asyncio.create_task(delete_messages_later([suggestion_msg], 120))
 
 
+# --- 🔥 TOP CATEGORIES COMMAND HANDLER ---
+@Client.on_message(filters.command(["top", "topcategories"]) & (filters.group | filters.private))
+async def show_top_categories_cmd(bot: Client, message: Message):
+    status_msg = await message.reply_text("🔄 **Fetching top categories...**")
+
+    try:
+        top_cats = await get_top_categories_db(limit=6)
+
+        if not top_cats:
+            return await status_msg.edit_text("❌ **अभी डेटाबेस में कोई कैटेगरी उपलब्ध नहीं है या स्टोरीज में कैटेगरी नहीं जुड़ी है!**")
+
+        buttons = []
+        text_content = "🔥 **<u>TOP & MOST POPULAR CATEGORIES</u>**\n\n"
+
+        row = []
+        for idx, item in enumerate(top_cats, 1):
+            cat_name = str(item["category"]).strip().capitalize()
+            count = item["count"]
+            
+            text_content += f"**{idx}.** `{cat_name}` — **{count} Stories**\n"
+            row.append(InlineKeyboardButton(f"🔥 {cat_name} ({count})", callback_data=f"pgcat#{cat_name}#1"))
+            
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+
+        if row:
+            buttons.append(row)
+
+        buttons.append([InlineKeyboardButton("❌ Close", callback_data="close_all_st")])
+        markup = InlineKeyboardMarkup(buttons)
+
+        text_content += "\n👇 **Tap any category below to browse stories:**"
+
+        await status_msg.edit_text(text_content, reply_markup=markup)
+
+    except Exception as e:
+        await status_msg.edit_text(f"❌ **Error:**\n`{e}`")
+
+
 # --- Callback Query Handler for Category Pagination (Prev/Next) ---
 @Client.on_callback_query(filters.regex(r"^pgcat#"))
 async def category_pagination_callback(bot: Client, query: CallbackQuery):
@@ -173,6 +217,46 @@ async def category_pagination_callback(bot: Client, query: CallbackQuery):
         reply_markup=markup
     )
     await query.answer()
+
+
+# --- Callback Query Handler for Opening Category Story ---
+@Client.on_callback_query(filters.regex(r"^catstory#"))
+async def open_category_story_cb(bot: Client, query: CallbackQuery):
+    story_id = query.data.split("#", 1)[1]
+    
+    try:
+        story = await stories_col.find_one({"_id": ObjectId(story_id)})
+    except Exception:
+        story = None
+
+    if not story:
+        return await query.answer("❌ Story no longer exists in database!", show_alert=True)
+
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+
+    category_name = story.get("category", "General")
+    caption = (
+        f"📖 **Story Found:** `{story['title']}`\n"
+        f"🏷️ **Category:** `{category_name.capitalize()}`\n\n"
+        f"✨ Tap below to play ▶️ the complete story:\n\n"
+        f"⏱️ _This message will auto-delete in 5 minutes._"
+    )
+    
+    button = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📖 Play Story", url=story["link"])]
+    ])
+
+    reply_msg = None
+    try:
+        reply_msg = await bot.send_photo(chat_id=query.message.chat.id, photo=story["photo"], caption=caption, reply_markup=button)
+    except Exception:
+        reply_msg = await bot.send_message(chat_id=query.message.chat.id, text=caption, reply_markup=button, disable_web_page_preview=True)
+
+    if reply_msg:
+        asyncio.create_task(delete_messages_later([reply_msg], 300))
 
 
 # Ignore page counter click
