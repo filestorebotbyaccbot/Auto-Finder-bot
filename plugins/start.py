@@ -6,7 +6,7 @@ from pyrogram.enums import ParseMode
 from script import Script
 from config import Config
 from database.stories_db import add_user_db, stories_col, get_random_story_db
-from search import build_aesthetic_caption, delete_messages_later
+from plugins.search import build_aesthetic_caption, delete_messages_later
 
 # PM Standard Start Buttons (Updated with 🎲 Surprise Me Button)
 START_BUTTONS = InlineKeyboardMarkup([
