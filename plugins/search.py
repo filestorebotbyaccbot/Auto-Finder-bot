@@ -2,14 +2,15 @@ import math
 import asyncio
 from bson.objectid import ObjectId
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, InputMediaPhoto
 from pyrogram.enums import ParseMode
 from database.stories_db import (
     search_story_db, 
     stories_col, 
     get_all_categories_db, 
     get_stories_by_category_paged_db,
-    get_top_categories_db
+    get_top_categories_db,
+    get_random_story_db
 )
 
 PAGE_SIZE = 5  # एक पेज पर कितनी स्टोरीज दिखेंगी
@@ -81,11 +82,102 @@ def build_category_keyboard(stories: list, category_name: str, page: int, total_
     return InlineKeyboardMarkup(buttons)
 
 
+# --- 🎲 RANDOM STORY COMMAND HANDLER ---
+@Client.on_message(filters.command(["random", "surpriseme"]) & (filters.group | filters.private))
+async def random_story_handler(bot: Client, message: Message):
+    """
+    Fetches and displays a random story with 'Another Random' button.
+    """
+    story = await get_random_story_db()
+    
+    if not story:
+        return await message.reply_text("❌ **डेटाबेस में कोई स्टोरी उपलब्ध नहीं है!**")
+
+    caption = build_aesthetic_caption(story)
+
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎧 Listen / Play Story", url=story["link"])],
+        [
+            InlineKeyboardButton("🎲 Next Random", callback_data="fetch_next_random"),
+            InlineKeyboardButton("❌ Close", callback_data="close_all_st")
+        ]
+    ])
+
+    reply_msg = None
+    try:
+        reply_msg = await message.reply_photo(
+            photo=story["photo"],
+            caption=caption,
+            reply_markup=buttons,
+            parse_mode=ParseMode.HTML
+        )
+    except Exception:
+        reply_msg = await message.reply_text(
+            text=caption,
+            reply_markup=buttons,
+            disable_web_page_preview=True,
+            parse_mode=ParseMode.HTML
+        )
+
+    to_delete = [reply_msg]
+    if message.chat.type.value != "private":
+        to_delete.append(message)
+
+    asyncio.create_task(delete_messages_later(to_delete, 300))
+
+
+# --- 🎲 CALLBACK QUERY FOR "NEXT RANDOM" BUTTON ---
+@Client.on_callback_query(filters.regex("^fetch_next_random$"))
+async def next_random_callback(bot: Client, query: CallbackQuery):
+    story = await get_random_story_db()
+    
+    if not story:
+        return await query.answer("❌ कोई अन्य स्टोरी नहीं मिली!", show_alert=True)
+
+    caption = build_aesthetic_caption(story)
+
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎧 Listen / Play Story", url=story["link"])],
+        [
+            InlineKeyboardButton("🎲 Next Random", callback_data="fetch_next_random"),
+            InlineKeyboardButton("❌ Close", callback_data="close_all_st")
+        ]
+    ])
+
+    try:
+        if query.message.photo:
+            await query.message.edit_media(
+                media=InputMediaPhoto(media=story["photo"], caption=caption, parse_mode=ParseMode.HTML),
+                reply_markup=buttons
+            )
+        else:
+            await query.message.edit_text(
+                text=caption,
+                reply_markup=buttons,
+                disable_web_page_preview=True,
+                parse_mode=ParseMode.HTML
+            )
+        await query.answer("🎲 New Random Story Loaded!")
+    except Exception:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+            
+        await bot.send_photo(
+            chat_id=query.message.chat.id,
+            photo=story["photo"],
+            caption=caption,
+            reply_markup=buttons,
+            parse_mode=ParseMode.HTML
+        )
+
+
 # --- 🔍 MAIN SEARCH & CATEGORY HANDLER ---
 @Client.on_message(
     (filters.group | filters.private) & 
     filters.text & 
-    ~filters.command(["start", "addstory", "request", "allstories", "filter", "categories", "top", "topcategories", "deletestory", "clearallstories", "stats"])
+    ~filters.command(["start", "addstory", "request", "allstories", "filter", "categories", "top", "topcategories", "deletestory", "clearallstories", "stats", "random", "surpriseme"])
 )
 async def search_handler(bot: Client, message: Message):
     user_query = message.text.strip()
