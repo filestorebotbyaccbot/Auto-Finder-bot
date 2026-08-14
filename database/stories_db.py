@@ -111,6 +111,19 @@ async def get_all_titles():
     return titles
 
 
+# --- 🎲 RANDOM STORY HELPER FUNCTION ---
+
+async def get_random_story_db():
+    """
+    Fetches a single random story from MongoDB using $sample aggregation pipeline.
+    """
+    pipeline = [{"$sample": {"size": 1}}]
+    random_story = None
+    async for doc in stories_col.aggregate(pipeline):
+        random_story = doc
+    return random_story
+
+
 # --- 🔍 ENHANCED SEARCH & SUGGESTION SYSTEM ---
 
 async def search_story_db(query: str):
