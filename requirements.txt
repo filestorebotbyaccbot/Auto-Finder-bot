@@ -1,5 +1,5 @@
-pyrotgfork
-tgcrypto
+tjgram 
+TgCrypto
 motor
 dnspython
 rapidfuzz
