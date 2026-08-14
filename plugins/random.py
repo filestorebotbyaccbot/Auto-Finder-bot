@@ -2,7 +2,7 @@ from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pyrogram.enums import ParseMode
 from database.stories_db import get_random_story_db
-from search import build_aesthetic_caption, delete_messages_later
+from plugins.search import build_aesthetic_caption, delete_messages_later
 from languages import get_str  # अगर Multi-Language सिस्टम यूज़ कर रहे हैं
 import asyncio
 
