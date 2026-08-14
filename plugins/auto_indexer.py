@@ -3,31 +3,62 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 from pyrogram.enums import MessageEntityType
 from config import Config
-from database.stories_db import add_story_with_category_db
+from database.stories_db import save_full_story_db
 
 
-def extract_category_from_text(text: str) -> str:
+def parse_full_metadata(caption: str):
     """
-    Extracts category from caption/text using 'Category: Name' format or '#Hashtag'.
-    Defaults to 'General' if not found.
+    Extracts Title, Status, Platform, Genre, Episodes, and Description
+    strictly from the channel post text/caption.
     """
-    if not text:
-        return "General"
+    lines = [line.strip() for line in caption.split("\n") if line.strip()]
+    
+    # 1. Title (Always the First Line)
+    raw_title = lines[0] if lines else "Untitled Story"
 
-    # 1. Check for 'Category: Romance' or 'Category : Drama'
-    cat_match = re.search(r"(?i)category\s*:\s*([^\n]+)", text)
-    if cat_match:
-        return cat_match.group(1).strip().capitalize()
+    # 2. Status (Ongoing vs Completed)
+    status = "Ongoing"
+    if re.search(r"(?i)status\s*:\s*(completed|complete)", caption) or "completed" in caption.lower():
+        status = "Completed"
 
-    # 2. Check for Hashtags (#Romance, #Horror)
-    hashtags = re.findall(r"#(\w+)", text)
-    if hashtags:
-        ignore_tags = ["story", "channel", "post", "update", "read", "link"]
-        valid_tags = [tag.capitalize() for tag in hashtags if tag.lower() not in ignore_tags]
-        if valid_tags:
-            return valid_tags[0]
+    # 3. Platform (Pocket FM / KuKu FM etc.)
+    platform = "Pocket FM"
+    plat_match = re.search(r"(?i)platform\s*:\s*([^\n]+)", caption)
+    if plat_match:
+        platform = plat_match.group(1).strip()
 
-    return "General"
+    # 4. Genre / Category
+    genre = "General"
+    genre_match = re.search(r"(?i)(genre|category)\s*:\s*([^\n]+)", caption)
+    if genre_match:
+        genre = genre_match.group(2).strip().capitalize()
+    else:
+        # Fallback to Hashtags if Genre: line is missing
+        hashtags = re.findall(r"#(\w+)", caption)
+        if hashtags:
+            ignore_tags = ["story", "channel", "post", "update", "read", "link"]
+            valid_tags = [tag.capitalize() for tag in hashtags if tag.lower() not in ignore_tags]
+            if valid_tags:
+                genre = valid_tags[0]
+
+    # 5. Episodes
+    episodes = "1 / ∞"
+    ep_match = re.search(r"(?i)episodes\s*:\s*([^\n]+)", caption)
+    if ep_match:
+        episodes = ep_match.group(1).strip()
+
+    # 6. Story Description
+    description = "No description available."
+    if "Story Description" in caption:
+        # Splits after 'Story Description :-' or 'Story Description:'
+        desc_part = re.split(r"(?i)story\s*description\s*[:\-]*", caption, maxsplit=1)
+        if len(desc_part) > 1:
+            description = desc_part[1].strip()
+    elif len(lines) > 2:
+        # If no explicit header, treat remaining lines after metadata as description
+        description = "\n".join(lines[2:]).strip()
+
+    return raw_title, status, platform, genre, episodes, description
 
 
 def extract_custom_link(message: Message) -> str:
@@ -70,19 +101,16 @@ def extract_custom_link(message: Message) -> str:
 async def auto_index_channel_posts(bot: Client, message: Message):
     """
     Automatically detects new posts in specified source channels,
-    extracts first line as Title, Category, fetches Custom or Post Link, and indexes into MongoDB.
+    extracts Title, Status, Platform, Genre, Episodes, Description, 
+    fetches Link, and indexes full metadata into MongoDB.
     """
     caption_or_text = message.caption or message.text
     
     if not caption_or_text:
         return
     
-    # Strictly extract ONLY the first line as Title
-    raw_title = caption_or_text.strip()
-    clean_title = raw_title.split("\n")[0].strip()
-    
-    # Extract Category automatically
-    story_category = extract_category_from_text(caption_or_text)
+    # Extract Full Metadata from Caption
+    clean_title, status, platform, genre, episodes, description = parse_full_metadata(caption_or_text)
 
     # Extract Photo File ID (or fallback default banner)
     photo_id = message.photo.file_id if message.photo else "https://telegra.ph/file/default_banner.jpg"
@@ -90,12 +118,16 @@ async def auto_index_channel_posts(bot: Client, message: Message):
     # Extract Custom Link or Default Channel Post Link
     final_story_link = extract_custom_link(message)
         
-    # Save into MongoDB with Category
-    await add_story_with_category_db(
+    # Save into MongoDB with Full Metadata
+    await save_full_story_db(
         title=clean_title,
         photo=photo_id,
         link=final_story_link,
-        category=story_category
+        status=status,
+        platform=platform,
+        genre=genre,
+        episodes=episodes,
+        description=description
     )
     
     # Send Notification to Log Channel
@@ -104,7 +136,10 @@ async def auto_index_channel_posts(bot: Client, message: Message):
             log_text = (
                 f"⚡ **Auto-Indexed New Story!**\n\n"
                 f"📌 **Title:** `{clean_title}`\n"
-                f"🏷️ **Category:** `{story_category}`\n"
+                f"🔰 **Status:** `{status}`\n"
+                f"🖥️ **Platform:** `{platform}`\n"
+                f"🧩 **Genre:** `{genre}`\n"
+                f"🎬 **Episodes:** `{episodes}`\n"
                 f"📢 **Channel:** {message.chat.title}\n"
                 f"🔗 **Saved Link:** {final_story_link}"
             )
