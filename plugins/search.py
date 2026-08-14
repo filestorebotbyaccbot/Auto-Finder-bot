@@ -18,7 +18,7 @@ async def delete_messages_later(messages_to_delete: list, delay_seconds: int):
 @Client.on_message(
     (filters.group | filters.private) & 
     filters.text & 
-    ~filters.command(["start", "addstory", "request", "allstories", "filter", "deletestory", "clearallstories"])
+    ~filters.command(["start", "addstory", "request", "allstories", "filter", "categories", "deletestory", "clearallstories"])
 )
 async def search_handler(bot: Client, message: Message):
     # Ignore slash commands completely
@@ -35,14 +35,16 @@ async def search_handler(bot: Client, message: Message):
     # --- Case 1: Exact / High Confidence Match ---
     if result["type"] == "exact":
         story = result["data"]
+        category_name = story.get("category", "General")
         
         caption = (
-            f"📖 **Story Found:** `{story['title']}`\n\n"
+            f"📖 **Story Found:** `{story['title']}`\n"
+            f"🏷️ **Category:** `{category_name.capitalize()}`\n\n"
             f"✨ Tap the button below to play ▶️ the complete story:\n\n"
             f"⏱️ _This message will auto-delete in 5 minutes._"
         )
         
-        # Direct Play Button (No PM Redirect)
+        # Direct Play Button
         button = InlineKeyboardMarkup([
             [InlineKeyboardButton("📖 Play Story", url=story["link"])]
         ])
@@ -119,13 +121,16 @@ async def suggestion_click_callback(bot: Client, query: CallbackQuery):
     except Exception:
         pass
 
+    category_name = story.get("category", "General")
+
     caption = (
-        f"📖 **Story Found:** `{story['title']}`\n\n"
+        f"📖 **Story Found:** `{story['title']}`\n"
+        f"🏷️ **Category:** `{category_name.capitalize()}`\n\n"
         f"✨ Tap below to play ▶️ the complete story:\n\n"
         f"⏱️ _This message will auto-delete in 5 minutes._"
     )
     
-    # Direct Play Button (No PM Redirect)
+    # Direct Play Button
     button = InlineKeyboardMarkup([
         [InlineKeyboardButton("📖 Play Story", url=story["link"])]
     ])
