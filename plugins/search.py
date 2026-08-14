@@ -3,6 +3,7 @@ import asyncio
 from bson.objectid import ObjectId
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram.enums import ParseMode
 from database.stories_db import (
     search_story_db, 
     stories_col, 
@@ -24,6 +25,35 @@ async def delete_messages_later(messages_to_delete: list, delay_seconds: int):
                 await msg.delete()
             except Exception:
                 pass
+
+
+# --- Helper Function to Build Aesthetic HTML Caption ---
+def build_aesthetic_caption(story: dict) -> str:
+    """
+    Constructs screenshot-style UI layout with Expandable Blockquote description
+    """
+    title = story.get("title", "Unknown Story")
+    status = story.get("status", "Ongoing")
+    platform = story.get("platform", "Pocket FM")
+    genre = story.get("category", story.get("genre", "General")).capitalize()
+    episodes = story.get("episodes", "1 / ∞")
+    description = story.get("description", "No description available for this story.")
+
+    # Status Emoji
+    status_emoji = "🟢" if status.lower() in ["completed", "complete"] else "♨️"
+
+    caption = (
+        f"<b>{status_emoji}Story : {title}</b>\n"
+        f"<b>🔰Status : {status.capitalize()}</b>\n"
+        f"<b>🖥️Platform : {platform}</b>\n"
+        f"<b>🧩Genre : {genre}</b>\n"
+        f"<b>🎬Episodes : {episodes}</b>\n"
+        f"═══════════════════\n"
+        f"📝 <b>Story Description :-</b>\n"
+        f"<blockquote expandable>{description}</blockquote>\n\n"
+        f"⏱️ <i>This message will auto-delete in 5 minutes.</i>"
+    )
+    return caption
 
 
 # --- Helper Function to Build Category Pagination Keyboard ---
@@ -80,11 +110,12 @@ async def search_handler(bot: Client, message: Message):
         markup = build_category_keyboard(stories, clean_cat_query, page, total_pages)
 
         cat_msg = await message.reply_text(
-            f"📁 **Category Found:** `{clean_cat_query}`\n"
-            f"📊 **Total Stories:** `{total_count}`\n\n"
+            f"📁 <b>Category Found:</b> <code>{clean_cat_query}</code>\n"
+            f"📊 <b>Total Stories:</b> <code>{total_count}</code>\n\n"
             f"Select a story below to read:\n\n"
-            f"⏱️ _This message will auto-delete in 2 minutes._",
-            reply_markup=markup
+            f"⏱️ <i>This message will auto-delete in 2 minutes.</i>",
+            reply_markup=markup,
+            parse_mode=ParseMode.HTML
         )
 
         to_delete = [cat_msg]
@@ -105,24 +136,28 @@ async def search_handler(bot: Client, message: Message):
     # Exact Match
     if result["type"] == "exact":
         story = result["data"]
-        category_name = story.get("category", "General")
-        
-        caption = (
-            f"📖 **Story Found:** `{story['title']}`\n"
-            f"🏷️ **Category:** `{category_name.capitalize()}`\n\n"
-            f"✨ Tap the button below to play ▶️ the complete story:\n\n"
-            f"⏱️ _This message will auto-delete in 5 minutes._"
-        )
+        caption = build_aesthetic_caption(story)
         
         button = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📖 Play Story", url=story["link"])]
+            [InlineKeyboardButton("🎧 Listen / Play Story", url=story["link"])],
+            [InlineKeyboardButton("❌ Close", callback_data="close_all_st")]
         ])
 
         reply_msg = None
         try:
-            reply_msg = await message.reply_photo(photo=story["photo"], caption=caption, reply_markup=button)
+            reply_msg = await message.reply_photo(
+                photo=story["photo"], 
+                caption=caption, 
+                reply_markup=button,
+                parse_mode=ParseMode.HTML
+            )
         except Exception:
-            reply_msg = await message.reply_text(text=caption, reply_markup=button, disable_web_page_preview=True)
+            reply_msg = await message.reply_text(
+                text=caption, 
+                reply_markup=button, 
+                disable_web_page_preview=True,
+                parse_mode=ParseMode.HTML
+            )
 
         to_delete = [reply_msg]
         if message.chat.type.value != "private":
@@ -148,8 +183,9 @@ async def search_handler(bot: Client, message: Message):
         markup = InlineKeyboardMarkup(buttons)
         
         suggestion_msg = await message.reply_text(
-            f"❓ **Did you mean one of these stories?**\n\nSelect a story from below to read:\n\n⏱️ _This message will auto-delete in 2 minutes._",
-            reply_markup=markup
+            f"❓ <b>Did you mean one of these stories?</b>\n\nSelect a story from below to read:\n\n⏱️ <i>This message will auto-delete in 2 minutes.</i>",
+            reply_markup=markup,
+            parse_mode=ParseMode.HTML
         )
 
         asyncio.create_task(delete_messages_later([suggestion_msg], 120))
@@ -167,14 +203,14 @@ async def show_top_categories_cmd(bot: Client, message: Message):
             return await status_msg.edit_text("❌ **अभी डेटाबेस में कोई कैटेगरी उपलब्ध नहीं है या स्टोरीज में कैटेगरी नहीं जुड़ी है!**")
 
         buttons = []
-        text_content = "🔥 **<u>TOP & MOST POPULAR CATEGORIES</u>**\n\n"
+        text_content = "🔥 <b><u>TOP & MOST POPULAR CATEGORIES</u></b>\n\n"
 
         row = []
         for idx, item in enumerate(top_cats, 1):
             cat_name = str(item["category"]).strip().capitalize()
             count = item["count"]
             
-            text_content += f"**{idx}.** `{cat_name}` — **{count} Stories**\n"
+            text_content += f"<b>{idx}.</b> <code>{cat_name}</code> — <b>{count} Stories</b>\n"
             row.append(InlineKeyboardButton(f"🔥 {cat_name} ({count})", callback_data=f"pgcat#{cat_name}#1"))
             
             if len(row) == 2:
@@ -187,9 +223,9 @@ async def show_top_categories_cmd(bot: Client, message: Message):
         buttons.append([InlineKeyboardButton("❌ Close", callback_data="close_all_st")])
         markup = InlineKeyboardMarkup(buttons)
 
-        text_content += "\n👇 **Tap any category below to browse stories:**"
+        text_content += "\n👇 <b>Tap any category below to browse stories:</b>"
 
-        await status_msg.edit_text(text_content, reply_markup=markup)
+        await status_msg.edit_text(text_content, reply_markup=markup, parse_mode=ParseMode.HTML)
 
     except Exception as e:
         await status_msg.edit_text(f"❌ **Error:**\n`{e}`")
@@ -210,11 +246,12 @@ async def category_pagination_callback(bot: Client, query: CallbackQuery):
     markup = build_category_keyboard(stories, category_name, page, total_pages)
 
     await query.message.edit_text(
-        f"📁 **Category Found:** `{category_name}`\n"
-        f"📊 **Total Stories:** `{total_count}`\n\n"
+        f"📁 <b>Category Found:</b> <code>{category_name}</code>\n"
+        f"📊 <b>Total Stories:</b> <code>{total_count}</code>\n\n"
         f"Select a story below to read:\n\n"
-        f"⏱️ _This message will auto-delete in 2 minutes._",
-        reply_markup=markup
+        f"⏱️ <i>This message will auto-delete in 2 minutes.</i>",
+        reply_markup=markup,
+        parse_mode=ParseMode.HTML
     )
     await query.answer()
 
@@ -237,23 +274,30 @@ async def open_category_story_cb(bot: Client, query: CallbackQuery):
     except Exception:
         pass
 
-    category_name = story.get("category", "General")
-    caption = (
-        f"📖 **Story Found:** `{story['title']}`\n"
-        f"🏷️ **Category:** `{category_name.capitalize()}`\n\n"
-        f"✨ Tap below to play ▶️ the complete story:\n\n"
-        f"⏱️ _This message will auto-delete in 5 minutes._"
-    )
+    caption = build_aesthetic_caption(story)
     
     button = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📖 Play Story", url=story["link"])]
+        [InlineKeyboardButton("🎧 Listen / Play Story", url=story["link"])],
+        [InlineKeyboardButton("❌ Close", callback_data="close_all_st")]
     ])
 
     reply_msg = None
     try:
-        reply_msg = await bot.send_photo(chat_id=query.message.chat.id, photo=story["photo"], caption=caption, reply_markup=button)
+        reply_msg = await bot.send_photo(
+            chat_id=query.message.chat.id, 
+            photo=story["photo"], 
+            caption=caption, 
+            reply_markup=button,
+            parse_mode=ParseMode.HTML
+        )
     except Exception:
-        reply_msg = await bot.send_message(chat_id=query.message.chat.id, text=caption, reply_markup=button, disable_web_page_preview=True)
+        reply_msg = await bot.send_message(
+            chat_id=query.message.chat.id, 
+            text=caption, 
+            reply_markup=button, 
+            disable_web_page_preview=True,
+            parse_mode=ParseMode.HTML
+        )
 
     if reply_msg:
         asyncio.create_task(delete_messages_later([reply_msg], 300))
@@ -279,23 +323,30 @@ async def suggestion_click_callback(bot: Client, query: CallbackQuery):
     except Exception:
         pass
 
-    category_name = story.get("category", "General")
-    caption = (
-        f"📖 **Story Found:** `{story['title']}`\n"
-        f"🏷️ **Category:** `{category_name.capitalize()}`\n\n"
-        f"✨ Tap below to play ▶️ the complete story:\n\n"
-        f"⏱️ _This message will auto-delete in 5 minutes._"
-    )
+    caption = build_aesthetic_caption(story)
     
     button = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📖 Play Story", url=story["link"])]
+        [InlineKeyboardButton("🎧 Listen / Play Story", url=story["link"])],
+        [InlineKeyboardButton("❌ Close", callback_data="close_all_st")]
     ])
 
     reply_msg = None
     try:
-        reply_msg = await bot.send_photo(chat_id=query.message.chat.id, photo=story["photo"], caption=caption, reply_markup=button)
+        reply_msg = await bot.send_photo(
+            chat_id=query.message.chat.id, 
+            photo=story["photo"], 
+            caption=caption, 
+            reply_markup=button,
+            parse_mode=ParseMode.HTML
+        )
     except Exception:
-        reply_msg = await bot.send_message(chat_id=query.message.chat.id, text=caption, reply_markup=button, disable_web_page_preview=True)
+        reply_msg = await bot.send_message(
+            chat_id=query.message.chat.id, 
+            text=caption, 
+            reply_markup=button, 
+            disable_web_page_preview=True,
+            parse_mode=ParseMode.HTML
+        )
 
     if reply_msg:
         asyncio.create_task(delete_messages_later([reply_msg], 300))
