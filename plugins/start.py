@@ -1,12 +1,14 @@
 import asyncio
 from bson.objectid import ObjectId
 from pyrogram import Client, filters, enums 
-from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
+from pyrogram.enums import ParseMode
 from script import Script
 from config import Config
-from database.stories_db import add_user_db, stories_col
+from database.stories_db import add_user_db, stories_col, get_random_story_db
+from search import build_aesthetic_caption, delete_messages_later
 
-# PM Standard Start Buttons
+# PM Standard Start Buttons (Updated with 🎲 Surprise Me Button)
 START_BUTTONS = InlineKeyboardMarkup([
     [
         InlineKeyboardButton("📢 Story Channel", url=Config.STORY_CHANNEL),
@@ -15,6 +17,9 @@ START_BUTTONS = InlineKeyboardMarkup([
     [
         InlineKeyboardButton("ℹ️ About", callback_data="about_cb"),
         InlineKeyboardButton("🛠️ Help", callback_data="help_cb", style=enums.ButtonStyle.SUCCESS)
+    ],
+    [
+        InlineKeyboardButton("🎲 Surprise Me / Random", callback_data="fetch_next_random")
     ],
     [
         InlineKeyboardButton("👤 Developer", url=Config.OWNER_LINK)
@@ -104,7 +109,7 @@ async def group_start_cmd(bot: Client, message: Message):
     asyncio.create_task(auto_delete_msg(message, 120))
 
 
-# 3. Callbacks for About and Help
+# 3. Callbacks for About, Help, Home, and Random
 @Client.on_callback_query()
 async def cb_handler(bot: Client, query: CallbackQuery):
     data = query.data
@@ -136,6 +141,50 @@ async def cb_handler(bot: Client, query: CallbackQuery):
             reply_markup=BACK_BUTTON,
             disable_web_page_preview=True
         )
+
+    elif data == "fetch_next_random":
+        story = await get_random_story_db()
+        
+        if not story:
+            return await query.answer("❌ डेटाबेस में कोई स्टोरी उपलब्ध नहीं है!", show_alert=True)
+
+        caption = build_aesthetic_caption(story)
+
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎧 Listen / Play Story", url=story["link"])],
+            [
+                InlineKeyboardButton("🎲 Next Random", callback_data="fetch_next_random"),
+                InlineKeyboardButton("❌ Close", callback_data="close_all_st")
+            ]
+        ])
+
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+        reply_msg = None
+        try:
+            reply_msg = await bot.send_photo(
+                chat_id=query.message.chat.id,
+                photo=story["photo"],
+                caption=caption,
+                reply_markup=buttons,
+                parse_mode=ParseMode.HTML
+            )
+        except Exception:
+            reply_msg = await bot.send_message(
+                chat_id=query.message.chat.id,
+                text=caption,
+                reply_markup=buttons,
+                disable_web_page_preview=True,
+                parse_mode=ParseMode.HTML
+            )
+
+        if reply_msg and query.message.chat.type.value != "private":
+            asyncio.create_task(delete_messages_later([reply_msg], 300))
+
+        await query.answer("🎲 Random Story Loaded!")
 
     elif data == "close_all_st":
         try:
