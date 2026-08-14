@@ -205,4 +205,20 @@ async def get_stories_by_category_db(category_name: str, limit: int = 10):
     async for doc in stories_col.find({"category": category_name}).limit(limit):
         stories.append(doc)
     return stories
+
+
+async def get_top_categories_db(limit: int = 6):
+    """Fetches categories sorted by the number of stories they contain."""
+    pipeline = [
+        {"$group": {"_id": "$category", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": limit}
+    ]
+    
+    top_categories = []
+    async for doc in stories_col.aggregate(pipeline):
+        if doc["_id"]:
+            top_categories.append({"category": doc["_id"], "count": doc["count"]})
+            
+    return top_categories
     
