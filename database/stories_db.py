@@ -80,6 +80,24 @@ async def search_story_db(query: str):
     if not all_titles:
         return {"type": "none", "data": []}
 
+
+# --- Statistics Helper Functions ---
+
+async def get_total_users_count():
+    """Returns the total number of registered users."""
+    return await users_col.count_documents({})
+
+
+async def get_total_stories_count():
+    """Returns the total number of stories in database."""
+    return await stories_col.count_documents({})
+
+
+async def get_total_requests_count():
+    """Returns the total number of pending story requests."""
+    return await requests_col.count_documents({"status": "pending"})
+    
+
     # Extract top 4 best matches
     matches = process.extract(
         query, 
