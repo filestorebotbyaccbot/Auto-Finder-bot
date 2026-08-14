@@ -44,15 +44,32 @@ async def get_all_users_db():
 
 # --- Story Collection Helper Functions ---
 
-async def add_story_db(title: str, photo: str, link: str, description: str = ""):
-    """Inserts or updates a story document into MongoDB."""
+async def save_full_story_db(
+    title: str,
+    photo: str,
+    link: str,
+    status: str = "Ongoing",
+    platform: str = "Pocket FM",
+    genre: str = "General",
+    episodes: str = "1 / ∞",
+    description: str = "No description available."
+):
+    """
+    Saves complete story metadata into MongoDB.
+    Used by Auto-Induction and Interactive Add/Edit System.
+    """
     clean_title = title.strip().split("\n")[0]
     
     story_data = {
         "title": clean_title,
         "photo": photo,
         "link": link,
-        "description": description,
+        "status": status.strip().capitalize(),
+        "platform": platform.strip(),
+        "category": genre.strip().capitalize(),
+        "genre": genre.strip().capitalize(),
+        "episodes": episodes.strip(),
+        "description": description.strip(),
         "search_title": clean_text_for_search(clean_title)
     }
     
@@ -62,27 +79,27 @@ async def add_story_db(title: str, photo: str, link: str, description: str = "")
         upsert=True
     )
     return True
+
+
+async def add_story_db(title: str, photo: str, link: str, description: str = ""):
+    """Inserts or updates a story document into MongoDB."""
+    return await save_full_story_db(
+        title=title,
+        photo=photo,
+        link=link,
+        description=description
+    )
 
 
 async def add_story_with_category_db(title: str, photo: str, link: str, category: str = "General", description: str = ""):
     """Inserts or updates a story document with Category."""
-    clean_title = title.strip().split("\n")[0]
-    
-    story_data = {
-        "title": clean_title,
-        "photo": photo,
-        "link": link,
-        "category": category.strip().capitalize(),
-        "description": description,
-        "search_title": clean_text_for_search(clean_title)
-    }
-    
-    await stories_col.update_one(
-        {"search_title": story_data["search_title"]},
-        {"$set": story_data},
-        upsert=True
+    return await save_full_story_db(
+        title=title,
+        photo=photo,
+        link=link,
+        genre=category,
+        description=description
     )
-    return True
 
 
 async def get_all_titles():
@@ -119,7 +136,7 @@ async def search_story_db(query: str):
     # Cleaned map of titles for accurate fuzz comparison
     cleaned_titles_map = {title: clean_text_for_search(title) for title in all_titles}
 
-    # 3. RapidFuzz Extraction using token_set_ratio (handles partial/shuffled words perfectly)
+    # 3. RapidFuzz Extraction using token_set_ratio
     matches = process.extract(
         clean_query, 
         cleaned_titles_map, 
@@ -134,7 +151,7 @@ async def search_story_db(query: str):
         if matched_doc:
             return {"type": "exact", "data": matched_doc}
 
-    # Suggestions Threshold (>= 30% score to prevent missing minor queries)
+    # Suggestions Threshold (>= 30% score)
     filtered_matches = []
     for match in matches:
         score = match[1]
@@ -218,12 +235,10 @@ async def delete_single_story_db(query: str):
     """Deletes a single story document by title or search title."""
     clean_query = clean_text_for_search(query)
     
-    # Try deleting by search_title
     result = await stories_col.delete_one({"search_title": clean_query})
     if result.deleted_count > 0:
         return True
     
-    # Fallback to exact title match
     result_alt = await stories_col.delete_one({"title": query.strip()})
     return result_alt.deleted_count > 0
 
