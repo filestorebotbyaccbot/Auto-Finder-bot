@@ -2,7 +2,7 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, InputMediaPhoto
 from pyrogram.enums import ParseMode
-from database.stories_db import get_random_story_db
+from database.stories_db import get_random_story_db, is_story_favorite_db
 from plugins.search import build_aesthetic_caption, build_story_buttons, delete_messages_later
 
 # --- 🎲 RANDOM STORY COMMAND HANDLER ---
@@ -16,9 +16,12 @@ async def random_story_handler(bot: Client, message: Message):
     if not story:
         return await message.reply_text("❌ <b>डेटाबेस में कोई स्टोरी उपलब्ध नहीं है!</b>")
 
-    # Photo/Caption & Rating UI Build करें
+    user_id = message.from_user.id
+    is_fav = await is_story_favorite_db(user_id, str(story["_id"]))
+
+    # Photo/Caption & Rating UI Build करें (is_fav status ke saath)
     caption = build_aesthetic_caption(story)
-    buttons = build_story_buttons(story)
+    buttons = build_story_buttons(story, is_fav=is_fav)
 
     # "Next Random" बटन को रेटिंग बटन्स के साथ शामिल करें
     button_list = buttons.inline_keyboard
@@ -57,8 +60,11 @@ async def next_random_callback(bot: Client, query: CallbackQuery):
     if not story:
         return await query.answer("❌ कोई अन्य स्टोरी नहीं मिली!", show_alert=True)
 
+    user_id = query.from_user.id
+    is_fav = await is_story_favorite_db(user_id, str(story["_id"]))
+
     caption = build_aesthetic_caption(story)
-    buttons = build_story_buttons(story)
+    buttons = build_story_buttons(story, is_fav=is_fav)
 
     # "Next Random" बटन को रेटिंग बटन्स के साथ जोड़ें
     button_list = buttons.inline_keyboard
