@@ -1,31 +1,36 @@
 class Script(object):
 
     START_TXT = """
-✨ **Hello {mention}, Welcome!** ✨
+✨ <b>ʜᴇʟʟᴏ {mention}, ᴡᴇʟᴄᴏᴍᴇ!</b> ✨
 
-🆔 **Your User ID:** `{user_id}`
+<blockquote expandable>ɪ ᴀᴍ <b>{bot_name}</b>. ꜱᴇɴᴅ ᴍᴇ ᴀɴʏ ꜱᴛᴏʀʏ ᴛɪᴛʟᴇ ɪɴ ᴘʀɪᴠᴀᴛᴇ ᴏʀ ɢʀᴏᴜᴘ ᴛᴏ ɢᴇᴛ ɪᴛꜱ ᴅɪʀᴇᴄᴛ ᴀᴄᴄᴇꜱꜱ ʟɪɴᴋ.</blockquote>
 
-I am **VC Story Finder Bot**. Send me any story title in private or group to get its direct access link.
+👇 <i>ᴜꜱᴇ ᴛʜᴇ ʙᴜᴛᴛᴏɴꜱ ʙᴇʟᴏᴡ ᴛᴏ ᴇxᴘʟᴏʀᴇ ᴍʏ ꜰᴇᴀᴛᴜʀᴇꜱ!</i>
 
-Use the buttons below to explore my features!
+🆔 <code>{user_id}</code>
 """
 
     ABOUT_TXT = """
-🤖 **Bot Name:** VC Story Finder Bot
-🆔 **Your User ID:** `{user_id}`
-🐍 **Language:** Python 3
-📚 **Framework:** Pyrogram
-💾 **Database:** MongoDB
-👨‍💻 **Developer:** [Kaluu]({owner_link})
+🤖 <b>ʙᴏᴛ ɴᴀᴍᴇ:</b> {bot_name}
+🆔 <b>ʏᴏᴜʀ ᴜꜱᴇʀ ɪᴅ:</b> <code>{user_id}</code>
+🐍 <b>ʟᴀɴɢᴜᴀɢᴇ:</b> ᴘʏᴛʜᴏɴ 3
+📚 <b>ꜰʀᴀᴍᴇᴡᴏʀᴋ:</b> ᴘʏʀᴏɢʀᴀᴍ
+💾 <b>ᴅᴀᴛᴀʙᴀꜱᴇ:</b> ᴍᴏɴɢᴏᴅʙ
+👨‍💻 <b>ᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <a href="{owner_link}">ᴋᴀʟᴜᴜ</a>
 
-Engineered with RapidFuzz logic for smart recommendations even with spelling typos!
+<blockquote expandable>ᴇɴɢɪɴᴇᴇʀᴇᴅ ᴡɪᴛʜ ʀᴀᴘɪᴅꜰᴜᴢᴢ ʟᴏɢɪᴄ ꜰᴏʀ ꜱᴍᴀʀᴛ ʀᴇᴄᴏᴍᴍᴇɴᴅᴀᴛɪᴏɴꜱ ᴇᴠᴇɴ ᴡɪᴛʜ ꜱᴘᴇʟʟɪɴɢ ᴛʏᴘᴏꜱ!</blockquote>
 """
 
     HELP_TXT = """
-🛠 **How to use VC Story Finder Bot:**
+🛠 <b><u>ʜᴏᴡ ᴛᴏ ᴜꜱᴇ {bot_name}</u></b>
 
-1️⃣ **Search:** Type any story title directly in group or private (e.g., `Veer Gatha`).
-2️⃣ **All Stories List:** Type `/allstories` or `/filter`. Tap any story name to copy it instantly.
-3️⃣ **Request Story:** If a story is not in database, type `/request <story name>`.
+<blockquote expandable>1️⃣ <b>ꜱᴇᴀʀᴄʜ:</b> ᴛʏᴘᴇ ᴀɴʏ ꜱᴛᴏʀʏ ᴛɪᴛʟᴇ ᴅɪʀᴇᴄᴛʟʏ ɪɴ ɢʀᴏᴜᴘ ᴏʀ ᴘʀɪᴠᴀᴛᴇ (ᴇ.ɢ., <code>ᴠᴇᴇʀ ɢᴀᴛʜᴀ</code>).
+
+2️⃣ <b>ᴀʟʟ ꜱᴛᴏʀɪᴇꜱ & ꜰɪʟᴛᴇʀ:</b> ᴛʏᴘᴇ /allstories ᴏʀ /filter. ᴛᴀᴘ ᴀɴʏ ꜱᴛᴏʀʏ ɴᴀᴍᴇ ᴛᴏ ᴄᴏᴘʏ ɪᴛ ɪɴꜱᴛᴀɴᴛʟʏ.
+
+3️⃣ <b>🎲 ʀᴀɴᴅᴏᴍ ꜱᴛᴏʀʏ:</b> ᴄʟɪᴄᴋ "🎲 ꜱᴜʀᴘʀɪꜱᴇ ᴍᴇ / ʀᴀɴᴅᴏᴍ" ʙᴜᴛᴛᴏɴ to DISCOVER A RANDOM STORY INSTANTLY FROM DATABASE.
+
+4️⃣ <b>🧩 ᴄᴀᴛᴇɢᴏʀʏ / ᴄᴀᴛᴇɢᴏʀʏ:</b> ʙʀᴏᴡꜱᴇ ꜱᴛᴏʀɪᴇꜱ ʙʏ ɢᴇɴʀᴇ ʟɪᴋᴇ ʀᴏᴍᴀɴᴄᴇ, ʜᴏʀʀᴏʀ, ᴅʀᴀᴍᴀ, ꜱᴄɪ-ꜰɪ, ᴏʀ ᴛʜʀɪʟʟᴇʀ.
+
+5️⃣ <b>ʀᴇǫᴜᴇꜱᴛ ꜱᴛᴏʀʏ:</b> ɪꜰ ᴀ ꜱᴛᴏʀʏ ɪꜱ ɴᴏᴛ ɪɴ ᴅᴀᴛᴀʙᴀꜱᴇ, ᴛʏᴘᴇ /request &lt;ꜱᴛᴏʀʏ ɴᴀᴍᴇ&gt;.</blockquote>
 """
-
