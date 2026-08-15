@@ -5,6 +5,14 @@ from pyrogram.enums import ParseMode
 from database.stories_db import *
 from bson.objectid import ObjectId
 
+# Helper function to truncate button titles cleanly with "..."
+def format_clean_button_title(title: str, max_len: int = 26) -> str:
+    title = str(title).strip()
+    if len(title) > max_len:
+        return f"📖 {title[:max_len-3]}..."
+    return f"📖 {title}"
+
+
 # Auto Delete Helper
 async def delete_msg_later(msg: Message, delay: int = 120):
     await asyncio.sleep(delay)
@@ -44,7 +52,7 @@ def build_aesthetic_caption(story: dict) -> str:
     return caption
 
 
-# /categories or /filter Command
+# /categories or /filters Command
 @Client.on_message(filters.command(["categories", "filters"]) & (filters.group | filters.private))
 async def show_categories_cmd(bot: Client, message: Message):
     categories = await get_all_categories_db()
@@ -89,7 +97,8 @@ async def category_select_cb(bot: Client, query: CallbackQuery):
     # Create Buttons for Stories in Selected Category
     buttons = []
     for story in stories:
-        btn_text = f"📖 {story['title'][:22]}"
+        # Clean Button Formatting Fix (Truncates with '...' instead of raw cut)
+        btn_text = format_clean_button_title(story.get('title', 'Untitled'), max_len=26)
         buttons.append([InlineKeyboardButton(btn_text, callback_data=f"catstory#{story['_id']}")])
 
     buttons.append([InlineKeyboardButton("🔙 Back to Categories", callback_data="back_to_cats")])
