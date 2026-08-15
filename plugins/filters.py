@@ -3,7 +3,8 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pyrogram.enums import ParseMode
-from database.stories_db import*
+from database.stories_db import *
+from plugins.search import build_aesthetic_caption, build_story_buttons
 
 ITEMS_PER_PAGE = 10  # 10 Buttons per page limit
 
@@ -15,36 +16,6 @@ async def delete_msg_later(msg: Message, delay: int = 300):
         await msg.delete()
     except Exception:
         pass
-
-
-# --- Helper Function to Build Aesthetic HTML Caption ---
-def build_aesthetic_caption(story: dict) -> str:
-    """
-    Constructs screenshot-style UI layout with Expandable Blockquote description
-    (Unified design for ALL preview popups/messages)
-    """
-    title = story.get("title", "Unknown Story")
-    status = story.get("status", "Ongoing")
-    platform = story.get("platform", "Pocket FM")
-    genre = story.get("category", story.get("genre", "General")).capitalize()
-    episodes = story.get("episodes", "1 / ∞")
-    description = story.get("description", "No description available for this story.")
-
-    # Status Emoji Logic
-    status_emoji = "🟢" if str(status).lower() in ["completed", "complete"] else "♨️"
-
-    caption = (
-        f"<b>{status_emoji}Story : {title}</b>\n"
-        f"<b>🔰Status : {str(status).capitalize()}</b>\n"
-        f"<b>🖥️Platform : {platform}</b>\n"
-        f"<b>🧩Genre : {genre}</b>\n"
-        f"<b>🎬Episodes : {episodes}</b>\n"
-        f"═══════════════════\n"
-        f"📝 <b>Story Description :-</b>\n"
-        f"<blockquote expandable>{description}</blockquote>\n\n"
-        f"⏱️ <i>This message will auto-delete in 5 minutes.</i>"
-    )
-    return caption
 
 
 def get_stories_keyboard(titles_list, page=0):
@@ -132,11 +103,7 @@ async def story_item_click_callback(bot: Client, query: CallbackQuery):
         return await query.answer("❌ Story no longer exists!", show_alert=True)
     
     caption = build_aesthetic_caption(story)
-    
-    button = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎧 Listen / Play Story", url=story["link"])],
-        [InlineKeyboardButton("❌ Close", callback_data="close_all_st")]
-    ])
+    buttons = build_story_buttons(story)
     
     reply_msg = None
     try:
@@ -144,14 +111,14 @@ async def story_item_click_callback(bot: Client, query: CallbackQuery):
             chat_id=query.message.chat.id,
             photo=story["photo"],
             caption=caption,
-            reply_markup=button,
+            reply_markup=buttons,
             parse_mode=ParseMode.HTML
         )
     except Exception:
         reply_msg = await bot.send_message(
             chat_id=query.message.chat.id,
             text=caption,
-            reply_markup=button,
+            reply_markup=buttons,
             disable_web_page_preview=True,
             parse_mode=ParseMode.HTML
         )
