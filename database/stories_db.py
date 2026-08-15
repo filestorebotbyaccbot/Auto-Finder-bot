@@ -35,7 +35,8 @@ async def add_user_db(user_id: int, first_name: str, username: str = None) -> bo
         await users_col.insert_one({
             "user_id": user_id,
             "first_name": first_name,
-            "username": username
+            "username": username,
+            "favorites": []
         })
         return True  # 🟢 Return True ONLY for New User
     else:
@@ -54,6 +55,50 @@ async def get_all_users_db():
         if "user_id" in doc:
             user_ids.append(doc["user_id"])
     return user_ids
+
+
+# --- ⭐️ BOOKMARK / FAVORITES SYSTEM HELPER FUNCTIONS ---
+
+async def toggle_favorite_db(user_id: int, story_id: str):
+    """Adds or removes a story from user's favorite list."""
+    user = await users_col.find_one({"user_id": user_id})
+    if not user:
+        return False, "User not found!"
+
+    favorites = user.get("favorites", [])
+    
+    if story_id in favorites:
+        # Remove from favorites
+        await users_col.update_one({"user_id": user_id}, {"$pull": {"favorites": story_id}})
+        return False, "Removed from Favorites! ❌"
+    else:
+        # Add to favorites
+        await users_col.update_one({"user_id": user_id}, {"$addToSet": {"favorites": story_id}})
+        return True, "Added to Favorites! ⭐"
+
+
+async def get_user_favorites_db(user_id: int):
+    """Fetches all favorite stories for a user."""
+    user = await users_col.find_one({"user_id": user_id})
+    if not user or "favorites" not in user:
+        return []
+
+    fav_ids = []
+    for sid in user.get("favorites", []):
+        if ObjectId.is_valid(sid):
+            fav_ids.append(ObjectId(sid))
+
+    if not fav_ids:
+        return []
+
+    cursor = stories_col.find({"_id": {"$in": fav_ids}})
+    return await cursor.to_list(length=100)
+
+
+async def is_story_favorite_db(user_id: int, story_id: str) -> bool:
+    """Checks if a story is already in user's favorites list."""
+    user = await users_col.find_one({"user_id": user_id, "favorites": story_id})
+    return bool(user)
 
 
 # --- Story Collection Helper Functions ---
@@ -201,7 +246,7 @@ async def rate_story_db(story_id: str, user_id: int, rating_type: str):
         return False, 0
 
 
-async def get_trending_stories_db(limit: int = 10):
+async def get_trending_stories_db(limit: int = 50):
     """
     Fetches top stories sorted dynamically by number of Likes.
     """
