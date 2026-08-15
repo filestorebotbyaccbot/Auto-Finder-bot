@@ -53,9 +53,12 @@ async def auto_delete_msg(message: Message, delay: int):
         pass
 
 
-# 1. Private Chat /start Handler (ONLY LOGS NEW USERS)
+# 1. Private Chat /start Handler (With Immediate 'Please Wait' Response)
 @Client.on_message(filters.command("start") & filters.private)
 async def private_start_cmd(bot: Client, message: Message):
+    # ⚡ Instant Wait Response
+    wait_msg = await message.reply_text("<b>Pʟᴇᴀsᴇ Wᴀɪᴛ</b>", parse_mode=ParseMode.HTML)
+    
     user = message.from_user
 
     # Returns True ONLY if user is NEW, False if user ALREADY EXISTS in DB
@@ -65,7 +68,8 @@ async def private_start_cmd(bot: Client, message: Message):
         username=user.username
     )
 
-    start_msg = await message.reply_text(
+    # Edit 'Please Wait' message to Main Start Text
+    start_msg = await wait_msg.edit_text(
         text=Script.START_TXT.format(
             mention=user.mention,
             user_id=user.id,
@@ -94,9 +98,12 @@ async def private_start_cmd(bot: Client, message: Message):
             print(f"⚠️ Log Channel error: {e}")
 
 
-# 2. Group /start Handler (Separate Handler)
+# 2. Group /start Handler (With Immediate 'Please Wait' Response)
 @Client.on_message(filters.command("start") & ~filters.private)
 async def group_start_cmd(bot: Client, message: Message):
+    # ⚡ Instant Wait Response
+    wait_msg = await message.reply_text("⏳ <b>PLEASE WAIT...</b>", parse_mode=ParseMode.HTML)
+
     user = message.from_user
     chat = message.chat
 
@@ -107,7 +114,7 @@ async def group_start_cmd(bot: Client, message: Message):
         f"⏱️ <i>ᴛʜɪꜱ ᴍᴇꜱꜱᴀɢᴇ ᴡɪʟʟ ᴀᴜᴛᴏ-ᴅᴇʟᴇᴛᴇ ɪɴ 2 ᴍɪɴᴜᴛᴇꜱ.</i>"
     )
 
-    group_msg = await message.reply_text(
+    group_msg = await wait_msg.edit_text(
         text=group_text,
         reply_markup=GROUP_START_BUTTONS,
         disable_web_page_preview=True,
