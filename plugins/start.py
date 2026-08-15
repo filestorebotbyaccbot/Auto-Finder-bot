@@ -1,3 +1,5 @@
+import sys
+import os
 import asyncio
 from bson.objectid import ObjectId
 from pyrogram import Client, filters, enums 
@@ -51,13 +53,13 @@ async def auto_delete_msg(message: Message, delay: int):
         pass
 
 
-# 1. Private Chat /start Handler
+# 1. Private Chat /start Handler (ONLY LOGS NEW USERS)
 @Client.on_message(filters.command("start") & filters.private)
 async def private_start_cmd(bot: Client, message: Message):
     user = message.from_user
 
-    # Save User for Broadcasting
-    await add_user_db(
+    # Returns True ONLY if user is NEW, False if user ALREADY EXISTS in DB
+    is_new_user = await add_user_db(
         user_id=user.id,
         first_name=user.first_name,
         username=user.username
@@ -67,14 +69,15 @@ async def private_start_cmd(bot: Client, message: Message):
         text=Script.START_TXT.format(
             mention=user.mention,
             user_id=user.id,
-            bot_name=bot.me.first_name  # 👈 Auto-Fetch Bot Name
+            bot_name=bot.me.first_name
         ),
         reply_markup=START_BUTTONS,
         disable_web_page_preview=True,
         parse_mode=ParseMode.HTML
     )
 
-    if Config.LOG_CHANNEL:
+    # Log Channel me notification SIRF NAYE User par jayegi
+    if is_new_user and Config.LOG_CHANNEL:
         try:
             log_text = (
                 f"👤 <b>ɴᴇᴡ ᴜꜱᴇʀ ꜱᴛᴀʀᴛᴇᴅ ʙᴏᴛ!</b>\n\n"
@@ -116,7 +119,29 @@ async def group_start_cmd(bot: Client, message: Message):
     asyncio.create_task(auto_delete_msg(message, 120))
 
 
-# 3. Callbacks for About, Help, Home, and Random
+# 3. System Restart Command (Admin Only)
+@Client.on_message(filters.command("restart") & filters.private)
+async def restart_bot_handler(bot: Client, message: Message):
+    if message.from_user.id not in Config.ADMIN_IDS:
+        return await message.reply_text("⛔ <b>ᴀᴄᴄᴇꜱꜱ ᴅᴇɴɪᴇᴅ! ᴏɴʟʏ ᴀᴅᴍɪɴꜱ ᴄᴀɴ ʀᴇꜱᴛᴀʀᴛ.</b>")
+
+    restart_msg = await message.reply_text(
+        "🔄 <b>ʙᴏᴛ ɪꜱ ʀᴇꜱᴛᴀʀᴛɪɴɢ... ᴘʟᴇᴀꜱᴇ ᴡᴀɪᴛ!</b>",
+        parse_mode=ParseMode.HTML
+    )
+
+    # Save details to edit command response on bootup
+    try:
+        with open("restart_info.txt", "w") as f:
+            f.write(f"{restart_msg.chat.id}\n{restart_msg.id}")
+    except Exception:
+        pass
+
+    await bot.stop()
+    os.execl(sys.executable, sys.executable, *sys.argv)
+
+
+# 4. Callbacks for About, Help, Home, and Random
 @Client.on_callback_query()
 async def cb_handler(bot: Client, query: CallbackQuery):
     data = query.data
@@ -127,7 +152,7 @@ async def cb_handler(bot: Client, query: CallbackQuery):
             text=Script.START_TXT.format(
                 mention=query.from_user.mention,
                 user_id=user_id,
-                bot_name=bot.me.first_name  # 👈 Dynamic Bot Name
+                bot_name=bot.me.first_name
             ),
             reply_markup=START_BUTTONS,
             disable_web_page_preview=True,
@@ -139,7 +164,7 @@ async def cb_handler(bot: Client, query: CallbackQuery):
             text=Script.ABOUT_TXT.format(
                 owner_link=Config.OWNER_LINK,
                 user_id=user_id,
-                bot_name=bot.me.first_name  # 👈 Dynamic Bot Name
+                bot_name=bot.me.first_name
             ),
             reply_markup=BACK_BUTTON,
             disable_web_page_preview=True,
@@ -149,7 +174,7 @@ async def cb_handler(bot: Client, query: CallbackQuery):
     elif data == "help_cb":
         await query.message.edit_text(
             text=Script.HELP_TXT.format(
-                bot_name=bot.me.first_name  # 👈 Dynamic Bot Name
+                bot_name=bot.me.first_name
             ),
             reply_markup=BACK_BUTTON,
             disable_web_page_preview=True,
