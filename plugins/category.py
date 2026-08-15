@@ -4,6 +4,7 @@ from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineK
 from pyrogram.enums import ParseMode
 from database.stories_db import *
 from bson.objectid import ObjectId
+from plugins.search import build_aesthetic_caption, build_story_buttons
 
 # Helper function to truncate button titles cleanly with "..."
 def format_clean_button_title(title: str, max_len: int = 26) -> str:
@@ -20,36 +21,6 @@ async def delete_msg_later(msg: Message, delay: int = 120):
         await msg.delete()
     except Exception:
         pass
-
-
-# --- Helper Function to Build Aesthetic HTML Caption ---
-def build_aesthetic_caption(story: dict) -> str:
-    """
-    Constructs screenshot-style UI layout with Expandable Blockquote description
-    (Unified design for ALL preview popups/messages)
-    """
-    title = story.get("title", "Unknown Story")
-    status = story.get("status", "Ongoing")
-    platform = story.get("platform", "Pocket FM")
-    genre = story.get("category", story.get("genre", "General")).capitalize()
-    episodes = story.get("episodes", "1 / ∞")
-    description = story.get("description", "No description available for this story.")
-
-    # Status Emoji Logic
-    status_emoji = "🟢" if str(status).lower() in ["completed", "complete"] else "♨️"
-
-    caption = (
-        f"<b>{status_emoji}Story : {title}</b>\n"
-        f"<b>🔰Status : {str(status).capitalize()}</b>\n"
-        f"<b>🖥️Platform : {platform}</b>\n"
-        f"<b>🧩Genre : {genre}</b>\n"
-        f"<b>🎬Episodes : {episodes}</b>\n"
-        f"═══════════════════\n"
-        f"📝 <b>Story Description :-</b>\n"
-        f"<blockquote expandable>{description}</blockquote>\n\n"
-        f"⏱️ <i>This message will auto-delete in 5 minutes.</i>"
-    )
-    return caption
 
 
 # /categories or /filters Command
@@ -72,7 +43,7 @@ async def show_categories_cmd(bot: Client, message: Message):
     if row:
         buttons.append(row)
 
-    buttons.append([InlineKeyboardButton("❌ Close", callback_data="close_all_st")])
+    buttons.append([InlineKeyboardButton("❌ Cʟᴏsᴇ", callback_data="close_all_st")])
 
     cat_msg = await message.reply_text(
         "📂 <b><u>Select a Category to Browse Stories:</u></b>\n\n⏱️ <i>This message will auto-delete in 2 minutes.</i>",
@@ -102,7 +73,7 @@ async def category_select_cb(bot: Client, query: CallbackQuery):
         buttons.append([InlineKeyboardButton(btn_text, callback_data=f"catstory#{story['_id']}")])
 
     buttons.append([InlineKeyboardButton("🔙 Back to Categories", callback_data="back_to_cats")])
-    buttons.append([InlineKeyboardButton("❌ Close", callback_data="close_all_st")])
+    buttons.append([InlineKeyboardButton("❌ Cʟᴏsᴇ", callback_data="close_all_st")])
 
     await query.message.edit_text(
         f"📁 <b>Category:</b> <code>{selected_cat}</code>\n\nSelect a story below to play:",
@@ -130,11 +101,7 @@ async def open_category_story_cb(bot: Client, query: CallbackQuery):
         pass
 
     caption = build_aesthetic_caption(story)
-    
-    button = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎧 Listen / Play Story", url=story["link"])],
-        [InlineKeyboardButton("❌ Close", callback_data="close_all_st")]
-    ])
+    buttons = build_story_buttons(story)
 
     reply_msg = None
     try:
@@ -142,14 +109,14 @@ async def open_category_story_cb(bot: Client, query: CallbackQuery):
             chat_id=query.message.chat.id,
             photo=story["photo"],
             caption=caption,
-            reply_markup=button,
+            reply_markup=buttons,
             parse_mode=ParseMode.HTML
         )
     except Exception:
         reply_msg = await bot.send_message(
             chat_id=query.message.chat.id,
             text=caption,
-            reply_markup=button,
+            reply_markup=buttons,
             disable_web_page_preview=True,
             parse_mode=ParseMode.HTML
         )
@@ -173,7 +140,7 @@ async def back_to_categories_cb(bot: Client, query: CallbackQuery):
     if row:
         buttons.append(row)
 
-    buttons.append([InlineKeyboardButton("❌ Close", callback_data="close_all_st")])
+    buttons.append([InlineKeyboardButton("❌ Cʟᴏsᴇ", callback_data="close_all_st")])
 
     await query.message.edit_text(
         "📂 <b><u>Select a Category to Browse Stories:</u></b>\n\n⏱️ <i>This message will auto-delete in 2 minutes.</i>",
