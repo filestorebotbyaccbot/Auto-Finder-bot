@@ -1,6 +1,7 @@
 import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.enums import ParseMode
 from database.stories_db import get_top_categories_db
 
 # Helper function to prevent button text overflow
@@ -11,12 +12,23 @@ def clean_top_button_text(cat_name: str, count: int, max_len: int = 18) -> str:
     return f"🔥 {name} ({count})"
 
 
+# Non-blocking Auto Delete Helper
+async def delete_msg_later(messages: list, delay: int = 120):
+    await asyncio.sleep(delay)
+    for msg in messages:
+        try:
+            await msg.delete()
+        except Exception:
+            pass
+
+
 @Client.on_message(filters.command(["top", "topcategories"]) & (filters.group | filters.private))
 async def show_top_categories_cmd(bot: Client, message: Message):
     top_cats = await get_top_categories_db(limit=6)
 
     if not top_cats:
-        return await message.reply_text("❌ **अभी डेटाबेस में कोई ट्रेंडिंग या टॉप कैटेगरी नहीं है!**")
+        msg = await message.reply_text("❌ <b>अभी डेटाबेस में कोई ट्रेंडिंग या टॉप कैटेगरी नहीं है!</b>", parse_mode=ParseMode.HTML)
+        return asyncio.create_task(delete_msg_later([msg, message], 15))
 
     buttons = []
     text_content = "🔥 <b><u>TOP & MOST POPULAR CATEGORIES</u></b>\n\n"
@@ -40,17 +52,16 @@ async def show_top_categories_cmd(bot: Client, message: Message):
     if row:
         buttons.append(row)
 
-    buttons.append([InlineKeyboardButton("❌ Close", callback_data="close_all_st")])
+    buttons.append([InlineKeyboardButton("❌ Cʟᴏsᴇ", callback_data="close_all_st")])
     markup = InlineKeyboardMarkup(buttons)
 
     text_content += "\n👇 <b>Tap any category below to browse stories:</b>\n⏱️ <i>This message will auto-delete in 2 minutes.</i>"
 
-    msg = await message.reply_text(text_content, reply_markup=markup)
+    msg = await message.reply_text(
+        text=text_content,
+        reply_markup=markup,
+        parse_mode=ParseMode.HTML
+    )
 
-    # Auto-delete after 2 mins (both group and private to keep chat clean)
-    await asyncio.sleep(120)
-    try:
-        await msg.delete()
-        await message.delete()
-    except Exception:
-        pass
+    # Non-blocking auto-delete task
+    asyncio.create_task(delete_msg_later([msg, message], 120))
