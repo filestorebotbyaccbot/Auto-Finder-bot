@@ -115,6 +115,25 @@ async def add_story_with_category_db(title: str, photo: str, link: str, category
     )
 
 
+async def update_story_field_db(title: str, field_name: str, new_value: str) -> bool:
+    """
+    Updates a single field (status, platform, genre, episodes, description, link, photo) of a story.
+    """
+    clean_query = clean_text_for_search(title)
+    story = await stories_col.find_one({"$or": [{"search_title": clean_query}, {"title": title.strip()}]})
+    
+    if not story:
+        return False
+
+    update_data = {field_name: new_value.strip()}
+    if field_name in ["genre", "category"]:
+        update_data["genre"] = new_value.strip().capitalize()
+        update_data["category"] = new_value.strip().capitalize()
+
+    await stories_col.update_one({"_id": story["_id"]}, {"$set": update_data})
+    return True
+
+
 async def get_all_titles():
     """Fetches all story titles from MongoDB."""
     titles = []
