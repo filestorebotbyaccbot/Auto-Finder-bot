@@ -1,9 +1,51 @@
 import math
+import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from database.stories_db import get_all_titles, stories_col
+from pyrogram.enums import ParseMode
+from database.stories_db import*
 
 ITEMS_PER_PAGE = 10  # 10 Buttons per page limit
+
+
+# --- Helper Function for Background Message Auto-Deletion ---
+async def delete_msg_later(msg: Message, delay: int = 300):
+    await asyncio.sleep(delay)
+    try:
+        await msg.delete()
+    except Exception:
+        pass
+
+
+# --- Helper Function to Build Aesthetic HTML Caption ---
+def build_aesthetic_caption(story: dict) -> str:
+    """
+    Constructs screenshot-style UI layout with Expandable Blockquote description
+    (Unified design for ALL preview popups/messages)
+    """
+    title = story.get("title", "Unknown Story")
+    status = story.get("status", "Ongoing")
+    platform = story.get("platform", "Pocket FM")
+    genre = story.get("category", story.get("genre", "General")).capitalize()
+    episodes = story.get("episodes", "1 / ∞")
+    description = story.get("description", "No description available for this story.")
+
+    # Status Emoji Logic
+    status_emoji = "🟢" if str(status).lower() in ["completed", "complete"] else "♨️"
+
+    caption = (
+        f"<b>{status_emoji}Story : {title}</b>\n"
+        f"<b>🔰Status : {str(status).capitalize()}</b>\n"
+        f"<b>🖥️Platform : {platform}</b>\n"
+        f"<b>🧩Genre : {genre}</b>\n"
+        f"<b>🎬Episodes : {episodes}</b>\n"
+        f"═══════════════════\n"
+        f"📝 <b>Story Description :-</b>\n"
+        f"<blockquote expandable>{description}</blockquote>\n\n"
+        f"⏱️ <i>This message will auto-delete in 5 minutes.</i>"
+    )
+    return caption
+
 
 def get_stories_keyboard(titles_list, page=0):
     total_items = len(titles_list)
@@ -53,8 +95,9 @@ async def list_stories_handler(bot: Client, message: Message):
     markup, current_page, total_pages = get_stories_keyboard(titles, page=0)
     
     await message.reply_text(
-        text=f"📚 **Available Stories List (Page {current_page}/{total_pages}):**\n\nTap any story button below to play ▶️:",
-        reply_markup=markup
+        text=f"📚 <b>Available Stories List (Page {current_page}/{total_pages}):</b>\n\nTap any story button below to play ▶️:",
+        reply_markup=markup,
+        parse_mode=ParseMode.HTML
     )
 
 
@@ -70,8 +113,9 @@ async def stories_pagination_callback(bot: Client, query: CallbackQuery):
     markup, current_page, total_pages = get_stories_keyboard(titles, page=target_page)
     
     await query.message.edit_text(
-        text=f"📚 **Available Stories List (Page {current_page}/{total_pages}):**\n\nTap any story button below to play ▶️:",
-        reply_markup=markup
+        text=f"📚 <b>Available Stories List (Page {current_page}/{total_pages}):</b>\n\nTap any story button below to play ▶️:",
+        reply_markup=markup,
+        parse_mode=ParseMode.HTML
     )
     await query.answer()
 
@@ -87,23 +131,34 @@ async def story_item_click_callback(bot: Client, query: CallbackQuery):
     if not story:
         return await query.answer("❌ Story no longer exists!", show_alert=True)
     
-    caption = f"📖 **Story Found:** `{story['title']}`\n\n✨ Tap the button below to play ▶️ the complete story:"
+    caption = build_aesthetic_caption(story)
+    
     button = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📖 Play Story", url=story["link"])]
+        [InlineKeyboardButton("🎧 Listen / Play Story", url=story["link"])],
+        [InlineKeyboardButton("❌ Close", callback_data="close_all_st")]
     ])
     
+    reply_msg = None
     try:
-        await query.message.reply_photo(
+        reply_msg = await bot.send_photo(
+            chat_id=query.message.chat.id,
             photo=story["photo"],
             caption=caption,
-            reply_markup=button
+            reply_markup=button,
+            parse_mode=ParseMode.HTML
         )
     except Exception:
-        await query.message.reply_text(
+        reply_msg = await bot.send_message(
+            chat_id=query.message.chat.id,
             text=caption,
             reply_markup=button,
-            disable_web_page_preview=True
+            disable_web_page_preview=True,
+            parse_mode=ParseMode.HTML
         )
+
+    if reply_msg:
+        asyncio.create_task(delete_msg_later(reply_msg, 300))
+
     await query.answer()
 
 
@@ -114,4 +169,3 @@ async def close_menu_callback(bot: Client, query: CallbackQuery):
         await query.message.delete()
     except Exception:
         pass
-    await query.answer("Closed!")
