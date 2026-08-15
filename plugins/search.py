@@ -322,19 +322,14 @@ async def search_handler(bot: Client, message: Message):
 
         asyncio.create_task(delete_messages_later(to_delete, 300))
 
-    # Suggestions
+    # Suggestions (Updated to 1x1 Layout)
     elif result["type"] == "suggestions":
         suggestions = result["data"]
         buttons = []
-        row = []
+        
         for title in suggestions:
-            btn_text = f"📖 {title[:18]}"
-            row.append(InlineKeyboardButton(btn_text, callback_data=f"sg#{title[:25]}"))
-            if len(row) == 2:
-                buttons.append(row)
-                row = []
-        if row:
-            buttons.append(row)
+            btn_text = f"📖 {title[:35]}"
+            buttons.append([InlineKeyboardButton(btn_text, callback_data=f"sg#{title[:25]}")])
 
         buttons.append([InlineKeyboardButton("❌ Cʟᴏsᴇ", callback_data="close_all_st")])
         markup = InlineKeyboardMarkup(buttons)
