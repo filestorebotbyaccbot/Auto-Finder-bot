@@ -11,7 +11,8 @@ from database.stories_db import (
     get_stories_by_category_paged_db,
     get_top_categories_db,
     get_random_story_db,
-    rate_story_db
+    rate_story_db,
+    is_story_favorite_db
 )
 
 PAGE_SIZE = 5  # एक पेज पर कितनी स्टोरीज दिखेंगी
@@ -42,11 +43,11 @@ def build_aesthetic_caption(story: dict) -> str:
     description = story.get("description", "No description available for this story.")
 
     # Status Emoji
-    status_emoji = "🟢" if status.lower() in ["completed", "complete"] else "♨️"
+    status_emoji = "🟢" if str(status).lower() in ["completed", "complete"] else "♨️"
 
     caption = (
         f"<b>{status_emoji}Story : {title}</b>\n"
-        f"<b>🔰Status : {status.capitalize()}</b>\n"
+        f"<b>🔰Status : {str(status).capitalize()}</b>\n"
         f"<b>🖥️Platform : {platform}</b>\n"
         f"<b>🧩Genre : {genre}</b>\n"
         f"<b>🎬Episodes : {episodes}</b>\n"
@@ -58,11 +59,13 @@ def build_aesthetic_caption(story: dict) -> str:
     return caption
 
 
-# --- Helper Function to Build Rating Buttons ---
-def build_story_buttons(story: dict) -> InlineKeyboardMarkup:
-    likes_count = len(story.get("likes", []))
-    dislikes_count = len(story.get("dislikes", []))
+# --- Helper Function to Build Rating & Favorite Buttons ---
+def build_story_buttons(story: dict, is_fav: bool = False) -> InlineKeyboardMarkup:
+    likes_count = len(story.get("likes", [])) if isinstance(story.get("likes"), list) else story.get("likes", 0)
+    dislikes_count = len(story.get("dislikes", [])) if isinstance(story.get("dislikes"), list) else story.get("dislikes", 0)
     story_id = str(story["_id"])
+
+    fav_text = "⭐ Rᴇᴍᴏᴠᴇ Fᴀᴠ" if is_fav else "⭐ Aᴅᴅ Fᴀᴠᴏʀɪᴛᴇ"
 
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🎧 Lɪsᴛᴇɴ / Pʟᴀʏ Sᴛᴏʀʏ", url=story["link"])],
@@ -70,6 +73,7 @@ def build_story_buttons(story: dict) -> InlineKeyboardMarkup:
             InlineKeyboardButton(f"👍 {likes_count}", callback_data=f"rate#like#{story_id}"),
             InlineKeyboardButton(f"👎 {dislikes_count}", callback_data=f"rate#dislike#{story_id}")
         ],
+        [InlineKeyboardButton(fav_text, callback_data=f"fav#toggle#{story_id}")],
         [InlineKeyboardButton("❌ Cʟᴏsᴇ", callback_data="close_all_st")]
     ])
 
@@ -110,8 +114,9 @@ async def random_story_handler(bot: Client, message: Message):
     if not story:
         return await message.reply_text("❌ <b>डेटाबेस में कोई स्टोरी उपलब्ध नहीं है!</b>")
 
+    is_fav = await is_story_favorite_db(message.from_user.id, str(story["_id"]))
     caption = build_aesthetic_caption(story)
-    buttons = build_story_buttons(story)
+    buttons = build_story_buttons(story, is_fav=is_fav)
 
     reply_msg = None
     try:
@@ -144,19 +149,25 @@ async def next_random_callback(bot: Client, query: CallbackQuery):
     if not story:
         return await query.answer("❌ कोई अन्य स्टोरी नहीं मिली!", show_alert=True)
 
+    is_fav = await is_story_favorite_db(query.from_user.id, str(story["_id"]))
     caption = build_aesthetic_caption(story)
-    buttons = build_story_buttons(story)
+    buttons = build_story_buttons(story, is_fav=is_fav)
+
+    # Insert Next Random Button in keyboard layout
+    button_list = buttons.inline_keyboard
+    button_list.insert(2, [InlineKeyboardButton("🎲 Nᴇxᴛ Rᴀɴᴅᴏᴍ", callback_data="fetch_next_random")])
+    final_markup = InlineKeyboardMarkup(button_list)
 
     try:
         if query.message.photo:
             await query.message.edit_media(
                 media=InputMediaPhoto(media=story["photo"], caption=caption, parse_mode=ParseMode.HTML),
-                reply_markup=buttons
+                reply_markup=final_markup
             )
         else:
             await query.message.edit_text(
                 text=caption,
-                reply_markup=buttons,
+                reply_markup=final_markup,
                 disable_web_page_preview=True,
                 parse_mode=ParseMode.HTML
             )
@@ -171,7 +182,7 @@ async def next_random_callback(bot: Client, query: CallbackQuery):
             chat_id=query.message.chat.id,
             photo=story["photo"],
             caption=caption,
-            reply_markup=buttons,
+            reply_markup=final_markup,
             parse_mode=ParseMode.HTML
         )
 
@@ -180,7 +191,7 @@ async def next_random_callback(bot: Client, query: CallbackQuery):
 @Client.on_message(
     (filters.group | filters.private) & 
     filters.text & 
-    ~filters.command(["start", "addstory", "request", "allstories", "filter", "categories", "top", "topcategories", "deletestory", "clearallstories", "stats", "random", "surpriseme", "restart", "edit", "trending", "popular"])
+    ~filters.command(["start", "addstory", "request", "allstories", "filter", "categories", "top", "topcategories", "deletestory", "clearallstories", "stats", "random", "surpriseme", "restart", "edit", "trending", "popular", "favorites", "fav", "mybook"])
 )
 async def search_handler(bot: Client, message: Message):
     user_query = message.text.strip()
@@ -231,8 +242,9 @@ async def search_handler(bot: Client, message: Message):
     # Exact Match
     if result["type"] == "exact":
         story = result["data"]
+        is_fav = await is_story_favorite_db(message.from_user.id, str(story["_id"]))
         caption = build_aesthetic_caption(story)
-        buttons = build_story_buttons(story)
+        buttons = build_story_buttons(story, is_fav=is_fav)
 
         reply_msg = None
         try:
@@ -293,14 +305,14 @@ async def rate_story_cb(bot: Client, query: CallbackQuery):
     if not success:
         return await query.answer("❌ Rating process failed!", show_alert=True)
 
-    # Database se updated story lein taaki buttons update ho sakein
     try:
         story = await stories_col.find_one({"_id": ObjectId(story_id)})
     except Exception:
         story = None
 
     if story:
-        updated_buttons = build_story_buttons(story)
+        is_fav = await is_story_favorite_db(user_id, story_id)
+        updated_buttons = build_story_buttons(story, is_fav=is_fav)
         try:
             await query.message.edit_reply_markup(reply_markup=updated_buttons)
         except Exception:
@@ -393,8 +405,9 @@ async def open_category_story_cb(bot: Client, query: CallbackQuery):
     except Exception:
         pass
 
+    is_fav = await is_story_favorite_db(query.from_user.id, str(story["_id"]))
     caption = build_aesthetic_caption(story)
-    buttons = build_story_buttons(story)
+    buttons = build_story_buttons(story, is_fav=is_fav)
 
     reply_msg = None
     try:
@@ -438,8 +451,9 @@ async def suggestion_click_callback(bot: Client, query: CallbackQuery):
     except Exception:
         pass
 
+    is_fav = await is_story_favorite_db(query.from_user.id, str(story["_id"]))
     caption = build_aesthetic_caption(story)
-    buttons = build_story_buttons(story)
+    buttons = build_story_buttons(story, is_fav=is_fav)
 
     reply_msg = None
     try:
