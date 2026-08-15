@@ -1,7 +1,8 @@
 import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from database.stories_db import get_all_categories_db, get_stories_by_category_db, stories_col
+from pyrogram.enums import ParseMode
+from database.stories_db import *
 from bson.objectid import ObjectId
 
 # Auto Delete Helper
@@ -11,6 +12,36 @@ async def delete_msg_later(msg: Message, delay: int = 120):
         await msg.delete()
     except Exception:
         pass
+
+
+# --- Helper Function to Build Aesthetic HTML Caption ---
+def build_aesthetic_caption(story: dict) -> str:
+    """
+    Constructs screenshot-style UI layout with Expandable Blockquote description
+    (Unified design for ALL preview popups/messages)
+    """
+    title = story.get("title", "Unknown Story")
+    status = story.get("status", "Ongoing")
+    platform = story.get("platform", "Pocket FM")
+    genre = story.get("category", story.get("genre", "General")).capitalize()
+    episodes = story.get("episodes", "1 / ∞")
+    description = story.get("description", "No description available for this story.")
+
+    # Status Emoji Logic
+    status_emoji = "🟢" if str(status).lower() in ["completed", "complete"] else "♨️"
+
+    caption = (
+        f"<b>{status_emoji}Story : {title}</b>\n"
+        f"<b>🔰Status : {str(status).capitalize()}</b>\n"
+        f"<b>🖥️Platform : {platform}</b>\n"
+        f"<b>🧩Genre : {genre}</b>\n"
+        f"<b>🎬Episodes : {episodes}</b>\n"
+        f"═══════════════════\n"
+        f"📝 <b>Story Description :-</b>\n"
+        f"<blockquote expandable>{description}</blockquote>\n\n"
+        f"⏱️ <i>This message will auto-delete in 5 minutes.</i>"
+    )
+    return caption
 
 
 # /categories or /filter Command
@@ -36,8 +67,9 @@ async def show_categories_cmd(bot: Client, message: Message):
     buttons.append([InlineKeyboardButton("❌ Close", callback_data="close_all_st")])
 
     cat_msg = await message.reply_text(
-        "📂 **<u>Select a Category to Browse Stories:</u>**\n\n⏱️ _This message will auto-delete in 2 minutes._",
-        reply_markup=InlineKeyboardMarkup(buttons)
+        "📂 <b><u>Select a Category to Browse Stories:</u></b>\n\n⏱️ <i>This message will auto-delete in 2 minutes.</i>",
+        reply_markup=InlineKeyboardMarkup(buttons),
+        parse_mode=ParseMode.HTML
     )
 
     asyncio.create_task(delete_msg_later(cat_msg, 120))
@@ -64,8 +96,9 @@ async def category_select_cb(bot: Client, query: CallbackQuery):
     buttons.append([InlineKeyboardButton("❌ Close", callback_data="close_all_st")])
 
     await query.message.edit_text(
-        f"📁 **Category:** `{selected_cat}`\n\nSelect a story below to play:",
-        reply_markup=InlineKeyboardMarkup(buttons)
+        f"📁 <b>Category:</b> <code>{selected_cat}</code>\n\nSelect a story below to play:",
+        reply_markup=InlineKeyboardMarkup(buttons),
+        parse_mode=ParseMode.HTML
     )
 
 
@@ -87,14 +120,11 @@ async def open_category_story_cb(bot: Client, query: CallbackQuery):
     except Exception:
         pass
 
-    caption = (
-        f"📖 **Story Found:** `{story['title']}`\n"
-        f"🏷️ **Category:** `{story.get('category', 'General')}`\n\n"
-        f"✨ Tap below to play ▶️ the complete story:\n\n"
-        f"⏱️ _This message will auto-delete in 5 minutes._"
-    )
+    caption = build_aesthetic_caption(story)
+    
     button = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📖 Play Story", url=story["link"])]
+        [InlineKeyboardButton("🎧 Listen / Play Story", url=story["link"])],
+        [InlineKeyboardButton("❌ Close", callback_data="close_all_st")]
     ])
 
     reply_msg = None
@@ -103,14 +133,16 @@ async def open_category_story_cb(bot: Client, query: CallbackQuery):
             chat_id=query.message.chat.id,
             photo=story["photo"],
             caption=caption,
-            reply_markup=button
+            reply_markup=button,
+            parse_mode=ParseMode.HTML
         )
     except Exception:
         reply_msg = await bot.send_message(
             chat_id=query.message.chat.id,
             text=caption,
             reply_markup=button,
-            disable_web_page_preview=True
+            disable_web_page_preview=True,
+            parse_mode=ParseMode.HTML
         )
 
     if reply_msg:
@@ -135,6 +167,7 @@ async def back_to_categories_cb(bot: Client, query: CallbackQuery):
     buttons.append([InlineKeyboardButton("❌ Close", callback_data="close_all_st")])
 
     await query.message.edit_text(
-        "📂 **<u>Select a Category to Browse Stories:</u>**\n\n⏱️ _This message will auto-delete in 2 minutes._",
-        reply_markup=InlineKeyboardMarkup(buttons)
+        "📂 <b><u>Select a Category to Browse Stories:</u></b>\n\n⏱️ <i>This message will auto-delete in 2 minutes.</i>",
+        reply_markup=InlineKeyboardMarkup(buttons),
+        parse_mode=ParseMode.HTML
     )
