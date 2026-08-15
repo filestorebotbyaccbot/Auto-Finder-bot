@@ -16,21 +16,34 @@ def clean_text_for_search(text: str) -> str:
     return " ".join(text.split())
 
 
-# --- User Collection Helper Functions (For Broadcast) ---
+# --- User Collection Helper Functions (For Broadcast & Log Check) ---
 
-async def add_user_db(user_id: int, first_name: str, username: str = None):
-    """Saves or updates a user in MongoDB for broadcasting."""
-    user_data = {
-        "user_id": user_id,
-        "first_name": first_name,
-        "username": username
-    }
-    await users_col.update_one(
-        {"user_id": user_id},
-        {"$set": user_data},
-        upsert=True
-    )
-    return True
+async def add_user_db(user_id: int, first_name: str, username: str = None) -> bool:
+    """
+    Check karta hai ki user database me pehle se hai ya nahi.
+    - Agar NAYA user hai -> DB me insert karega aur TRUE return karega.
+    - Agar PURANA user hai -> Name/Username update karega aur FALSE return karega.
+    """
+    user_id = int(user_id)  # Ensure integer type matching
+    
+    # Check if user already exists
+    user = await users_col.find_one({"user_id": user_id})
+    
+    if not user:
+        # Naya User: Insert into Database
+        await users_col.insert_one({
+            "user_id": user_id,
+            "first_name": first_name,
+            "username": username
+        })
+        return True  # 🟢 Return True ONLY for New User
+    else:
+        # Purana User: Update latest name/username silently
+        await users_col.update_one(
+            {"user_id": user_id},
+            {"$set": {"first_name": first_name, "username": username}}
+        )
+        return False  # 🔴 Return False for Existing User
 
 
 async def get_all_users_db():
