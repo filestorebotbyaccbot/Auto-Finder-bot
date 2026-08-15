@@ -30,4 +30,4 @@ class Config:
     FORCE_SUB_LINK = os.environ.get("FORCE_SUB_LINK", "https://t.me/freestoryhubMR")
 
     # PM Search Restriction Settings (अगर True है तो PM में स्टोरी नहीं मिलेगी, केवल ग्रुप का मैसेज दिखेगा)
-    DISABLE_PM_SEARCH = os.environ.get("DISABLE_PM_SEARCH", "true").lower() == "true"  # True / False
+    DISABLE_PM_SEARCH = os.environ.get("DISABLE_PM_SEARCH", "false").lower() == "true"  # True / False
