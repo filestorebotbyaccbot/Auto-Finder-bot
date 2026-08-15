@@ -1,4 +1,5 @@
 import re
+from bson.objectid import ObjectId
 from rapidfuzz import process, fuzz
 from database.db import db, stories_col, requests_col
 
@@ -154,6 +155,69 @@ async def get_random_story_db():
     async for doc in stories_col.aggregate(pipeline):
         random_story = doc
     return random_story
+
+
+# --- ⭐️ RATING & TRENDING SYSTEM HELPER FUNCTIONS ---
+
+async def rate_story_db(story_id: str, user_id: int, rating_type: str):
+    """
+    Handles user Like/Dislike votes for a story.
+    - User can toggle their vote.
+    - Switches vote if previously liked/disliked.
+    """
+    try:
+        story_obj_id = ObjectId(story_id)
+        story = await stories_col.find_one({"_id": story_obj_id})
+        
+        if not story:
+            return False, 0
+
+        likes = story.get("likes", [])
+        dislikes = story.get("dislikes", [])
+
+        if rating_type == "like":
+            if user_id in likes:
+                likes.remove(user_id)  # Toggle Off Like
+            else:
+                likes.append(user_id)
+                if user_id in dislikes:
+                    dislikes.remove(user_id)  # Switch from Dislike to Like
+        
+        elif rating_type == "dislike":
+            if user_id in dislikes:
+                dislikes.remove(user_id)  # Toggle Off Dislike
+            else:
+                dislikes.append(user_id)
+                if user_id in likes:
+                    likes.remove(user_id)  # Switch from Like to Dislike
+
+        await stories_col.update_one(
+            {"_id": story_obj_id},
+            {"$set": {"likes": likes, "dislikes": dislikes}}
+        )
+        return True, len(likes)
+    except Exception as e:
+        print(f"❌ [DB RATING ERROR]: {e}")
+        return False, 0
+
+
+async def get_trending_stories_db(limit: int = 10):
+    """
+    Fetches top stories sorted dynamically by number of Likes.
+    """
+    try:
+        pipeline = [
+            {"$addFields": {"likes_count": {"$size": {"$ifNull": ["$likes", []]}}}},
+            {"$sort": {"likes_count": -1}},
+            {"$limit": limit}
+        ]
+        trending_list = []
+        async for doc in stories_col.aggregate(pipeline):
+            trending_list.append(doc)
+        return trending_list
+    except Exception as e:
+        print(f"❌ [DB TRENDING ERROR]: {e}")
+        return []
 
 
 # --- 🔍 ENHANCED SEARCH & SUGGESTION SYSTEM ---
