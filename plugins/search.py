@@ -177,7 +177,7 @@ async def next_random_callback(bot: Client, query: CallbackQuery):
 @Client.on_message(
     (filters.group | filters.private) & 
     filters.text & 
-    ~filters.command(["start", "addstory", "request", "allstories", "filter", "categories", "top", "topcategories", "deletestory", "clearallstories", "stats", "random", "surpriseme"])
+    ~filters.command(["start", "addstory", "request", "allstories", "filter", "categories", "top", "topcategories", "deletestory", "clearallstories", "stats", "random", "surpriseme", "restart"])
 )
 async def search_handler(bot: Client, message: Message):
     user_query = message.text.strip()
