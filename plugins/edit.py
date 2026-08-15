@@ -1,11 +1,38 @@
 import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.enums import ParseMode
 from config import Config
 from database.stories_db import stories_col, clean_text_for_search, update_story_field_db
 
-# Store temporary edit state: {user_id: {"title": story_title}}
+# Store temporary edit state: {user_id: "title"}
 EDIT_CACHE = {}
+
+
+# --- Helper Function to Build Aesthetic HTML Caption ---
+def build_aesthetic_caption(story: dict) -> str:
+    title = story.get("title", "Unknown Story")
+    status = story.get("status", "Ongoing")
+    platform = story.get("platform", "Pocket FM")
+    genre = story.get("category", story.get("genre", "General")).capitalize()
+    episodes = story.get("episodes", "1 / ∞")
+    description = story.get("description", "No description available for this story.")
+
+    # Status Emoji Logic
+    status_emoji = "🟢" if str(status).lower() in ["completed", "complete"] else "♨️"
+
+    caption = (
+        f"<b>{status_emoji}Story : {title}</b>\n"
+        f"<b>🔰Status : {str(status).capitalize()}</b>\n"
+        f"<b>🖥️Platform : {platform}</b>\n"
+        f"<b>🧩Genre : {genre}</b>\n"
+        f"<b>🎬Episodes : {episodes}</b>\n"
+        f"═══════════════════\n"
+        f"📝 <b>Story Description :-</b>\n"
+        f"<blockquote expandable>{description}</blockquote>"
+    )
+    return caption
+
 
 # 1. Main Edit Command (/edit Story Name)
 @Client.on_message(filters.command("edit") & filters.private)
@@ -56,7 +83,8 @@ async def edit_story_start(bot: Client, message: Message):
     await message.reply_text(
         f"🛠️ <b>ᴇᴅɪᴛ ᴍᴇɴᴜ ꜰᴏʀ:</b> <code>{story['title']}</code>\n\n"
         f"👇 Select which detail you want to change:",
-        reply_markup=buttons
+        reply_markup=buttons,
+        parse_mode=ParseMode.HTML
     )
 
 
@@ -95,7 +123,8 @@ async def edit_callback_handler(bot: Client, query: CallbackQuery):
     ask_msg = await bot.send_message(
         chat_id=query.message.chat.id,
         text=f"✏️ <b>Now send the new value for [{label}] for '{story_title}':</b>\n\n"
-             f"⏱️ <i>Reply within 60 seconds...</i>"
+             f"⏱️ <i>Reply within 60 seconds...</i>",
+        parse_mode=ParseMode.HTML
     )
 
     try:
@@ -104,18 +133,63 @@ async def edit_callback_handler(bot: Client, query: CallbackQuery):
         new_val = response.text.strip() if response.text else ""
 
         if not new_val:
-            return await ask_msg.edit_text("❌ <b>Invalid input! Text message required.</b>")
+            return await ask_msg.edit_text("❌ <b>Invalid input! Text message required.</b>", parse_mode=ParseMode.HTML)
 
         # Update Database
         success = await update_story_field_db(story_title, field, new_val)
+        
         if success:
-            await ask_msg.edit_text(
-                f"✅ <b>Successfully Updated!</b>\n\n"
-                f"📖 <b>Story:</b> <code>{story_title}</code>\n"
-                f"📌 <b>{field.capitalize()}:</b> <code>{new_val}</code>"
+            # Delete asking message
+            try:
+                await ask_msg.delete()
+            except Exception:
+                pass
+
+            # Fetch fresh story object from Database
+            updated_story = await stories_col.find_one({"search_title": clean_text_for_search(story_title)})
+            
+            if not updated_story:
+                return await bot.send_message(query.message.chat.id, "✅ <b>Successfully Updated!</b>")
+
+            # Build aesthetic preview
+            preview_caption = (
+                f"✅ <b><u>FIELD UPDATED SUCCESSFULLY!</u></b>\n"
+                f"📌 <b>Updated Field:</b> <code>{field.capitalize()}</code>\n"
+                f"═══════════════════\n"
+                f"{build_aesthetic_caption(updated_story)}"
+            )
+
+            photo_url = updated_story.get("photo")
+            story_link = updated_story.get("link", "https://t.me")
+
+            action_buttons = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎧 Listen / Play Story", url=story_link)],
+                [InlineKeyboardButton("❌ Close", callback_data="close_all_st")]
+            ])
+
+            # Try sending with Photo so cover photo doesn't disappear
+            if photo_url and photo_url.startswith("http"):
+                try:
+                    return await bot.send_photo(
+                        chat_id=query.message.chat.id,
+                        photo=photo_url,
+                        caption=preview_caption,
+                        reply_markup=action_buttons,
+                        parse_mode=ParseMode.HTML
+                    )
+                except Exception as e:
+                    print(f"❌ Failed to send photo preview: {e}")
+
+            # Fallback to Text if photo URL breaks/fails
+            await bot.send_message(
+                chat_id=query.message.chat.id,
+                text=preview_caption,
+                reply_markup=action_buttons,
+                disable_web_page_preview=True,
+                parse_mode=ParseMode.HTML
             )
         else:
-            await ask_msg.edit_text("❌ <b>Failed to update database!</b>")
+            await ask_msg.edit_text("❌ <b>Failed to update database!</b>", parse_mode=ParseMode.HTML)
 
     except asyncio.TimeoutError:
-        await ask_msg.edit_text("⏱️ <b>Timeout! You didn't send any message in 60 seconds.</b>")
+        await ask_msg.edit_text("⏱️ <b>Timeout! You didn't send any message in 60 seconds.</b>", parse_mode=ParseMode.HTML)
