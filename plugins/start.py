@@ -1,7 +1,7 @@
 import asyncio
 from bson.objectid import ObjectId
 from pyrogram import Client, filters, enums 
-from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
+from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.enums import ParseMode
 from script import Script
 from config import Config
@@ -16,10 +16,10 @@ START_BUTTONS = InlineKeyboardMarkup([
     ],
     [
         InlineKeyboardButton("ℹ️ About", callback_data="about_cb"),
-        InlineKeyboardButton("🛠️ Help", callback_data="help_cb", style=enums.ButtonStyle.SUCCESS)
+        InlineKeyboardButton("🛠️ Help", callback_data="help_cb")
     ],
     [
-        InlineKeyboardButton("🎲 Surprise Me / Random", callback_data="fetch_next_random")
+        InlineKeyboardButton("🎲 Surprise Me / Random", callback_data="fetch_next_random", style=enums.ButtonStyle.SUCCESS)
     ],
     [
         InlineKeyboardButton("👤 Developer", url=Config.OWNER_LINK)
@@ -66,21 +66,27 @@ async def private_start_cmd(bot: Client, message: Message):
     start_msg = await message.reply_text(
         text=Script.START_TXT.format(
             mention=user.mention,
-            user_id=user.id
+            user_id=user.id,
+            bot_name=bot.me.first_name  # 👈 Auto-Fetch Bot Name
         ),
         reply_markup=START_BUTTONS,
-        disable_web_page_preview=True
+        disable_web_page_preview=True,
+        parse_mode=ParseMode.HTML
     )
 
     if Config.LOG_CHANNEL:
         try:
             log_text = (
-                f"👤 **New User Started Bot!**\n\n"
-                f"✨ **Name:** {user.mention}\n"
-                f"🆔 **User ID:** `{user.id}`\n"
-                f"👤 **Username:** @{user.username if user.username else 'None'}"
+                f"👤 <b>ɴᴇᴡ ᴜꜱᴇʀ ꜱᴛᴀʀᴛᴇᴅ ʙᴏᴛ!</b>\n\n"
+                f"✨ <b>ɴᴀᴍᴇ:</b> {user.mention}\n"
+                f"🆔 <b>ᴜꜱᴇʀ ɪᴅ:</b> <code>{user.id}</code>\n"
+                f"👤 <b>ᴜꜱᴇʀɴᴀᴍᴇ:</b> @{user.username if user.username else 'None'}"
             )
-            await bot.send_message(chat_id=Config.LOG_CHANNEL, text=log_text)
+            await bot.send_message(
+                chat_id=Config.LOG_CHANNEL, 
+                text=log_text, 
+                parse_mode=ParseMode.HTML
+            )
         except Exception as e:
             print(f"⚠️ Log Channel error: {e}")
 
@@ -92,16 +98,17 @@ async def group_start_cmd(bot: Client, message: Message):
     chat = message.chat
 
     group_text = (
-        f"👋 **Hello {user.mention}! Welcome to {chat.title}!**\n\n"
-        f"I am active here to help you search and find your favorite stories. "
-        f"Just type any story name directly in this group to search!\n\n"
-        f"⏱️ _This message will auto-delete in 2 minutes._"
+        f"👋 <b>ʜᴇʟʟᴏ {user.mention}! ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ {chat.title}!</b>\n\n"
+        f"ɪ ᴀᴍ ᴀᴄᴛɪᴠᴇ ʜᴇʀᴇ ᴛᴏ ʜᴇʟᴘ ʏᴏᴜ ꜱᴇᴀʀᴄʜ ᴀɴᴅ ꜰɪɴᴅ ʏᴏᴜʀ ꜰᴀᴠᴏʀɪᴛᴇ ꜱᴛᴏʀɪᴇꜱ. "
+        f"ᴊᴜꜱᴛ ᴛʏᴘᴇ ᴀɴʏ ꜱᴛᴏʀʏ ɴᴀᴍᴇ ᴅɪʀᴇᴄᴛʟʏ ɪɴ ᴛʜɪꜱ ɢʀᴏᴜᴘ ᴛᴏ ꜱᴇᴀʀᴄʜ!\n\n"
+        f"⏱️ <i>ᴛʜɪꜱ ᴍᴇꜱꜱᴀɢᴇ ᴡɪʟʟ ᴀᴜᴛᴏ-ᴅᴇʟᴇᴛᴇ ɪɴ 2 ᴍɪɴᴜᴛᴇꜱ.</i>"
     )
 
     group_msg = await message.reply_text(
         text=group_text,
         reply_markup=GROUP_START_BUTTONS,
-        disable_web_page_preview=True
+        disable_web_page_preview=True,
+        parse_mode=ParseMode.HTML
     )
 
     # Auto-delete group start message & user command after 2 minutes (120s)
@@ -119,27 +126,34 @@ async def cb_handler(bot: Client, query: CallbackQuery):
         await query.message.edit_text(
             text=Script.START_TXT.format(
                 mention=query.from_user.mention,
-                user_id=user_id
+                user_id=user_id,
+                bot_name=bot.me.first_name  # 👈 Dynamic Bot Name
             ),
             reply_markup=START_BUTTONS,
-            disable_web_page_preview=True
+            disable_web_page_preview=True,
+            parse_mode=ParseMode.HTML
         )
 
     elif data == "about_cb":
         await query.message.edit_text(
             text=Script.ABOUT_TXT.format(
                 owner_link=Config.OWNER_LINK,
-                user_id=user_id
+                user_id=user_id,
+                bot_name=bot.me.first_name  # 👈 Dynamic Bot Name
             ),
             reply_markup=BACK_BUTTON,
-            disable_web_page_preview=True
+            disable_web_page_preview=True,
+            parse_mode=ParseMode.HTML
         )
 
     elif data == "help_cb":
         await query.message.edit_text(
-            text=Script.HELP_TXT,
+            text=Script.HELP_TXT.format(
+                bot_name=bot.me.first_name  # 👈 Dynamic Bot Name
+            ),
             reply_markup=BACK_BUTTON,
-            disable_web_page_preview=True
+            disable_web_page_preview=True,
+            parse_mode=ParseMode.HTML
         )
 
     elif data == "fetch_next_random":
