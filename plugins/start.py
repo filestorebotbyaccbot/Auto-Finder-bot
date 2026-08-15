@@ -119,14 +119,14 @@ async def group_start_cmd(bot: Client, message: Message):
     asyncio.create_task(auto_delete_msg(message, 120))
 
 
-# 3. System Restart Command (Admin Only)
+# 3. System Restart Command (Render Supported)
 @Client.on_message(filters.command("restart") & filters.private)
 async def restart_bot_handler(bot: Client, message: Message):
     if message.from_user.id not in Config.ADMIN_IDS:
         return await message.reply_text("⛔ <b>ᴀᴄᴄᴇꜱꜱ ᴅᴇɴɪᴇᴅ! ᴏɴʟʏ ᴀᴅᴍɪɴꜱ ᴄᴀɴ ʀᴇꜱᴛᴀʀᴛ.</b>")
 
     restart_msg = await message.reply_text(
-        "🔄 <b>ʙᴏᴛ ɪꜱ ʀᴇꜱᴛᴀʀᴛɪɴɢ... ᴘʟᴇᴀꜱᴇ ᴡᴀɪᴛ!</b>",
+        "🔄 <b>ʙᴏᴛ ɪꜱ ʀᴇꜱᴛᴀʀᴛɪɴɢ... ᴘʟᴇᴀꜱᴇ ᴡᴀɪᴛ 3-5 ꜱᴇᴄᴏɴᴅꜱ!</b>",
         parse_mode=ParseMode.HTML
     )
 
@@ -137,9 +137,14 @@ async def restart_bot_handler(bot: Client, message: Message):
     except Exception:
         pass
 
-    await bot.stop()
-    os.execl(sys.executable, sys.executable, *sys.argv)
+    # Stop Client & Exit Process Safely
+    try:
+        await bot.stop()
+    except Exception:
+        pass
 
+    # Instant exit signal for Render auto-restart container
+    os._exit(0)
 
 # 4. Callbacks for About, Help, Home, and Random
 @Client.on_callback_query()
