@@ -1,48 +1,47 @@
+import asyncio
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, InputMediaPhoto
 from pyrogram.enums import ParseMode
 from database.stories_db import get_random_story_db
-from plugins.search import build_aesthetic_caption, delete_messages_later
-import asyncio
+from plugins.search import build_aesthetic_caption, build_story_buttons, delete_messages_later
 
+# --- 🎲 RANDOM STORY COMMAND HANDLER ---
 @Client.on_message(filters.command(["random", "surpriseme"]) & (filters.group | filters.private))
 async def random_story_handler(bot: Client, message: Message):
     """
-    Fetches and displays a random story with 'Another Random' button.
+    Fetches and displays a random story with Like/Dislike rating and 'Another Random' buttons.
     """
     story = await get_random_story_db()
     
     if not story:
-        return await message.reply_text("❌ **डेटाबेस में कोई स्टोरी उपलब्ध नहीं है!**")
+        return await message.reply_text("❌ <b>डेटाबेस में कोई स्टोरी उपलब्ध नहीं है!</b>")
 
-    # Photo/Caption UI Build करें
+    # Photo/Caption & Rating UI Build करें
     caption = build_aesthetic_caption(story)
+    buttons = build_story_buttons(story)
 
-    buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎧 Listen / Play Story", url=story["link"])],
-        [
-            InlineKeyboardButton("🎲 Next Random", callback_data="fetch_next_random"),
-            InlineKeyboardButton("❌ Close", callback_data="close_all_st")
-        ]
-    ])
+    # "Next Random" बटन को रेटिंग बटन्स के साथ शामिल करें
+    button_list = buttons.inline_keyboard
+    button_list.insert(1, [InlineKeyboardButton("🎲 Nᴇxᴛ Rᴀɴᴅᴏᴍ", callback_data="fetch_next_random")])
+    final_markup = InlineKeyboardMarkup(button_list)
 
     reply_msg = None
     try:
         reply_msg = await message.reply_photo(
             photo=story["photo"],
             caption=caption,
-            reply_markup=buttons,
+            reply_markup=final_markup,
             parse_mode=ParseMode.HTML
         )
     except Exception:
         reply_msg = await message.reply_text(
             text=caption,
-            reply_markup=buttons,
+            reply_markup=final_markup,
             disable_web_page_preview=True,
             parse_mode=ParseMode.HTML
         )
 
-    # 5 मिनट में ऑटो-डिलीट (Optional)
+    # 5 मिनट में ऑटो-डिलीट
     to_delete = [reply_msg]
     if message.chat.type.value != "private":
         to_delete.append(message)
@@ -50,7 +49,7 @@ async def random_story_handler(bot: Client, message: Message):
     asyncio.create_task(delete_messages_later(to_delete, 300))
 
 
-# --- Callback Query for "🎲 Next Random" Button ---
+# --- 🎲 CALLBACK QUERY FOR "NEXT RANDOM" BUTTON ---
 @Client.on_callback_query(filters.regex("^fetch_next_random$"))
 async def next_random_callback(bot: Client, query: CallbackQuery):
     story = await get_random_story_db()
@@ -59,26 +58,24 @@ async def next_random_callback(bot: Client, query: CallbackQuery):
         return await query.answer("❌ कोई अन्य स्टोरी नहीं मिली!", show_alert=True)
 
     caption = build_aesthetic_caption(story)
+    buttons = build_story_buttons(story)
 
-    buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎧 Listen / Play Story", url=story["link"])],
-        [
-            InlineKeyboardButton("🎲 Next Random", callback_data="fetch_next_random"),
-            InlineKeyboardButton("❌ Close", callback_data="close_all_st")
-        ]
-    ])
+    # "Next Random" बटन को रेटिंग बटन्स के साथ जोड़ें
+    button_list = buttons.inline_keyboard
+    button_list.insert(1, [InlineKeyboardButton("🎲 Nᴇxᴛ Rᴀɴᴅᴏᴍ", callback_data="fetch_next_random")])
+    final_markup = InlineKeyboardMarkup(button_list)
 
     try:
         # फोटो और कैप्शन अपडेट करें
         if query.message.photo:
             await query.message.edit_media(
                 media=InputMediaPhoto(media=story["photo"], caption=caption, parse_mode=ParseMode.HTML),
-                reply_markup=buttons
+                reply_markup=final_markup
             )
         else:
             await query.message.edit_text(
                 text=caption,
-                reply_markup=buttons,
+                reply_markup=final_markup,
                 disable_web_page_preview=True,
                 parse_mode=ParseMode.HTML
             )
@@ -94,6 +91,6 @@ async def next_random_callback(bot: Client, query: CallbackQuery):
             chat_id=query.message.chat.id,
             photo=story["photo"],
             caption=caption,
-            reply_markup=buttons,
+            reply_markup=final_markup,
             parse_mode=ParseMode.HTML
         )
