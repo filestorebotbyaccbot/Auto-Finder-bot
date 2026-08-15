@@ -10,7 +10,8 @@ from database.stories_db import (
     get_all_categories_db, 
     get_stories_by_category_paged_db,
     get_top_categories_db,
-    get_random_story_db
+    get_random_story_db,
+    rate_story_db
 )
 
 PAGE_SIZE = 5  # एक पेज पर कितनी स्टोरीज दिखेंगी
@@ -57,6 +58,22 @@ def build_aesthetic_caption(story: dict) -> str:
     return caption
 
 
+# --- Helper Function to Build Rating Buttons ---
+def build_story_buttons(story: dict) -> InlineKeyboardMarkup:
+    likes_count = len(story.get("likes", []))
+    dislikes_count = len(story.get("dislikes", []))
+    story_id = str(story["_id"])
+
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎧 Lɪsᴛᴇɴ / Pʟᴀʏ Sᴛᴏʀʏ", url=story["link"])],
+        [
+            InlineKeyboardButton(f"👍 {likes_count}", callback_data=f"rate#like#{story_id}"),
+            InlineKeyboardButton(f"👎 {dislikes_count}", callback_data=f"rate#dislike#{story_id}")
+        ],
+        [InlineKeyboardButton("❌ Cʟᴏsᴇ", callback_data="close_all_st")]
+    ])
+
+
 # --- Helper Function to Build Category Pagination Keyboard ---
 def build_category_keyboard(stories: list, category_name: str, page: int, total_pages: int):
     buttons = []
@@ -77,7 +94,7 @@ def build_category_keyboard(stories: list, category_name: str, page: int, total_
         nav_row.append(InlineKeyboardButton("Next ▶️", callback_data=f"pgcat#{category_name}#{page + 1}"))
 
     buttons.append(nav_row)
-    buttons.append([InlineKeyboardButton("❌ Close", callback_data="close_all_st")])
+    buttons.append([InlineKeyboardButton("❌ Cʟᴏsᴇ", callback_data="close_all_st")])
     
     return InlineKeyboardMarkup(buttons)
 
@@ -91,17 +108,10 @@ async def random_story_handler(bot: Client, message: Message):
     story = await get_random_story_db()
     
     if not story:
-        return await message.reply_text("❌ **डेटाबेस में कोई स्टोरी उपलब्ध नहीं है!**")
+        return await message.reply_text("❌ <b>डेटाबेस में कोई स्टोरी उपलब्ध नहीं है!</b>")
 
     caption = build_aesthetic_caption(story)
-
-    buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎧 Listen / Play Story", url=story["link"])],
-        [
-            InlineKeyboardButton("🎲 Next Random", callback_data="fetch_next_random"),
-            InlineKeyboardButton("❌ Close", callback_data="close_all_st")
-        ]
-    ])
+    buttons = build_story_buttons(story)
 
     reply_msg = None
     try:
@@ -135,14 +145,7 @@ async def next_random_callback(bot: Client, query: CallbackQuery):
         return await query.answer("❌ कोई अन्य स्टोरी नहीं मिली!", show_alert=True)
 
     caption = build_aesthetic_caption(story)
-
-    buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎧 Listen / Play Story", url=story["link"])],
-        [
-            InlineKeyboardButton("🎲 Next Random", callback_data="fetch_next_random"),
-            InlineKeyboardButton("❌ Close", callback_data="close_all_st")
-        ]
-    ])
+    buttons = build_story_buttons(story)
 
     try:
         if query.message.photo:
@@ -177,7 +180,7 @@ async def next_random_callback(bot: Client, query: CallbackQuery):
 @Client.on_message(
     (filters.group | filters.private) & 
     filters.text & 
-    ~filters.command(["start", "addstory", "request", "allstories", "filter", "categories", "top", "topcategories", "deletestory", "clearallstories", "stats", "random", "surpriseme", "restart", "edit"])
+    ~filters.command(["start", "addstory", "request", "allstories", "filter", "categories", "top", "topcategories", "deletestory", "clearallstories", "stats", "random", "surpriseme", "restart", "edit", "trending", "popular"])
 )
 async def search_handler(bot: Client, message: Message):
     user_query = message.text.strip()
@@ -229,24 +232,20 @@ async def search_handler(bot: Client, message: Message):
     if result["type"] == "exact":
         story = result["data"]
         caption = build_aesthetic_caption(story)
-        
-        button = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎧 Listen / Play Story", url=story["link"])],
-            [InlineKeyboardButton("❌ Close", callback_data="close_all_st")]
-        ])
+        buttons = build_story_buttons(story)
 
         reply_msg = None
         try:
             reply_msg = await message.reply_photo(
                 photo=story["photo"], 
                 caption=caption, 
-                reply_markup=button,
+                reply_markup=buttons,
                 parse_mode=ParseMode.HTML
             )
         except Exception:
             reply_msg = await message.reply_text(
                 text=caption, 
-                reply_markup=button, 
+                reply_markup=buttons, 
                 disable_web_page_preview=True,
                 parse_mode=ParseMode.HTML
             )
@@ -271,7 +270,7 @@ async def search_handler(bot: Client, message: Message):
         if row:
             buttons.append(row)
 
-        buttons.append([InlineKeyboardButton("❌ Close", callback_data="close_all_st")])
+        buttons.append([InlineKeyboardButton("❌ Cʟᴏsᴇ", callback_data="close_all_st")])
         markup = InlineKeyboardMarkup(buttons)
         
         suggestion_msg = await message.reply_text(
@@ -281,6 +280,34 @@ async def search_handler(bot: Client, message: Message):
         )
 
         asyncio.create_task(delete_messages_later([suggestion_msg], 120))
+
+
+# --- ⭐️ RATING CALLBACK QUERY HANDLER (👍 / 👎 Buttons) ---
+@Client.on_callback_query(filters.regex(r"^rate#"))
+async def rate_story_cb(bot: Client, query: CallbackQuery):
+    _, rating_type, story_id = query.data.split("#")
+    user_id = query.from_user.id
+
+    success, _ = await rate_story_db(story_id, user_id, rating_type)
+
+    if not success:
+        return await query.answer("❌ Rating process failed!", show_alert=True)
+
+    # Database se updated story lein taaki buttons update ho sakein
+    try:
+        story = await stories_col.find_one({"_id": ObjectId(story_id)})
+    except Exception:
+        story = None
+
+    if story:
+        updated_buttons = build_story_buttons(story)
+        try:
+            await query.message.edit_reply_markup(reply_markup=updated_buttons)
+        except Exception:
+            pass
+
+    action_text = "Liked! 👍" if rating_type == "like" else "Disliked! 👎"
+    await query.answer(f"Thanks! Story {action_text}")
 
 
 # --- 🔥 TOP CATEGORIES COMMAND HANDLER ---
@@ -312,7 +339,7 @@ async def show_top_categories_cmd(bot: Client, message: Message):
         if row:
             buttons.append(row)
 
-        buttons.append([InlineKeyboardButton("❌ Close", callback_data="close_all_st")])
+        buttons.append([InlineKeyboardButton("❌ Cʟᴏsᴇ", callback_data="close_all_st")])
         markup = InlineKeyboardMarkup(buttons)
 
         text_content += "\n👇 <b>Tap any category below to browse stories:</b>"
@@ -367,11 +394,7 @@ async def open_category_story_cb(bot: Client, query: CallbackQuery):
         pass
 
     caption = build_aesthetic_caption(story)
-    
-    button = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎧 Listen / Play Story", url=story["link"])],
-        [InlineKeyboardButton("❌ Close", callback_data="close_all_st")]
-    ])
+    buttons = build_story_buttons(story)
 
     reply_msg = None
     try:
@@ -379,14 +402,14 @@ async def open_category_story_cb(bot: Client, query: CallbackQuery):
             chat_id=query.message.chat.id, 
             photo=story["photo"], 
             caption=caption, 
-            reply_markup=button,
+            reply_markup=buttons,
             parse_mode=ParseMode.HTML
         )
     except Exception:
         reply_msg = await bot.send_message(
             chat_id=query.message.chat.id, 
             text=caption, 
-            reply_markup=button, 
+            reply_markup=buttons, 
             disable_web_page_preview=True,
             parse_mode=ParseMode.HTML
         )
@@ -416,11 +439,7 @@ async def suggestion_click_callback(bot: Client, query: CallbackQuery):
         pass
 
     caption = build_aesthetic_caption(story)
-    
-    button = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎧 Listen / Play Story", url=story["link"])],
-        [InlineKeyboardButton("❌ Close", callback_data="close_all_st")]
-    ])
+    buttons = build_story_buttons(story)
 
     reply_msg = None
     try:
@@ -428,14 +447,14 @@ async def suggestion_click_callback(bot: Client, query: CallbackQuery):
             chat_id=query.message.chat.id, 
             photo=story["photo"], 
             caption=caption, 
-            reply_markup=button,
+            reply_markup=buttons,
             parse_mode=ParseMode.HTML
         )
     except Exception:
         reply_msg = await bot.send_message(
             chat_id=query.message.chat.id, 
             text=caption, 
-            reply_markup=button, 
+            reply_markup=buttons, 
             disable_web_page_preview=True,
             parse_mode=ParseMode.HTML
         )
