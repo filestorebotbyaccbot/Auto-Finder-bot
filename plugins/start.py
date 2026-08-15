@@ -8,7 +8,7 @@ from pyrogram.enums import ParseMode
 from script import Script
 from config import Config
 from database.stories_db import add_user_db, stories_col, get_random_story_db
-from plugins.search import build_aesthetic_caption, delete_messages_later
+from plugins.search import build_aesthetic_caption, build_story_buttons, delete_messages_later
 
 # PM Standard Start Buttons (Styled with Small Caps Text)
 START_BUTTONS = InlineKeyboardMarkup([
@@ -213,14 +213,12 @@ async def cb_handler(bot: Client, query: CallbackQuery):
             return await query.answer("❌ डेटाबेस में कोई स्टोरी उपलब्ध नहीं है!", show_alert=True)
 
         caption = build_aesthetic_caption(story)
+        buttons = build_story_buttons(story)
 
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎧 Lɪsᴛᴇɴ / Pʟᴀʏ Sᴛᴏʀʏ", url=story["link"])],
-            [
-                InlineKeyboardButton("🎲 Nᴇxᴛ Rᴀɴᴅᴏᴍ", callback_data="fetch_next_random"),
-                InlineKeyboardButton("❌ Cʟᴏsᴇ", callback_data="close_all_st")
-            ]
-        ])
+        # Include "Next Random" button alongside rating buttons
+        button_list = buttons.inline_keyboard
+        button_list.insert(1, [InlineKeyboardButton("🎲 Nᴇxᴛ Rᴀɴᴅᴏᴍ", callback_data="fetch_next_random")])
+        final_markup = InlineKeyboardMarkup(button_list)
 
         try:
             await query.message.delete()
@@ -233,14 +231,14 @@ async def cb_handler(bot: Client, query: CallbackQuery):
                 chat_id=query.message.chat.id,
                 photo=story["photo"],
                 caption=caption,
-                reply_markup=buttons,
+                reply_markup=final_markup,
                 parse_mode=ParseMode.HTML
             )
         except Exception:
             reply_msg = await bot.send_message(
                 chat_id=query.message.chat.id,
                 text=caption,
-                reply_markup=buttons,
+                reply_markup=final_markup,
                 disable_web_page_preview=True,
                 parse_mode=ParseMode.HTML
             )
