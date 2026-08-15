@@ -23,3 +23,11 @@ class Config:
     STORY_CHANNEL = os.environ.get("STORY_CHANNEL", "https://t.me/freestoryhubMR")
     SUPPORT_GROUP = os.environ.get("SUPPORT_GROUP", "https://t.me/pratilipifm0900")
     OWNER_LINK = os.environ.get("OWNER_LINK", "https://t.me/KCXRY")
+
+    # Force Subscribe Settings
+    FSUB_ENABLE = os.environ.get("FSUB_ENABLE", "True").lower() == "true"  # True / False
+    FORCE_SUB_CHANNEL = int(os.environ.get("FORCE_SUB_CHANNEL", "-1003226074080"))
+    FORCE_SUB_LINK = os.environ.get("FORCE_SUB_LINK", "https://t.me/freestoryhubMR")
+
+    # PM Search Restriction Settings (अगर True है तो PM में स्टोरी नहीं मिलेगी, केवल ग्रुप का मैसेज दिखेगा)
+    DISABLE_PM_SEARCH = os.environ.get("DISABLE_PM_SEARCH", "True").lower() == "true"  # True / False
