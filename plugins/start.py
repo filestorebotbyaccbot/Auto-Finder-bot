@@ -7,7 +7,14 @@ from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineK
 from pyrogram.enums import ParseMode
 from script import Script
 from config import Config
-from database.stories_db import add_user_db, stories_col, get_random_story_db
+from database.stories_db import (
+    add_user_db, 
+    stories_col, 
+    get_random_story_db,
+    toggle_favorite_db,
+    get_user_favorites_db,
+    is_story_favorite_db
+)
 from plugins.search import build_aesthetic_caption, build_story_buttons, delete_messages_later
 
 # PM Standard Start Buttons (Styled with Small Caps Text)
@@ -19,6 +26,9 @@ START_BUTTONS = InlineKeyboardMarkup([
     [
         InlineKeyboardButton("ℹ️ Aʙᴏᴜᴛ", callback_data="about_cb"),
         InlineKeyboardButton("🛠️ Hᴇʟᴘ", callback_data="help_cb")
+    ],
+    [
+        InlineKeyboardButton("⭐ Mʏ Fᴀᴠᴏʀɪᴛᴇs", callback_data="show_favs")
     ],
     [
         InlineKeyboardButton("🎲 Sᴜʀᴘʀɪsᴇ Mᴇ / Rᴀɴᴅᴏᴍ", callback_data="fetch_next_random", style=enums.ButtonStyle.SUCCESS)
@@ -53,7 +63,18 @@ async def auto_delete_msg(message: Message, delay: int):
         pass
 
 
-# 1. Private Chat /start Handler (Delete Wait Msg & Send Main UI)
+# Helper function to build Favorites List Keyboard
+def build_favs_keyboard(fav_stories: list):
+    buttons = []
+    for story in fav_stories:
+        btn_text = f"📖 {story['title'][:22]}"
+        buttons.append([InlineKeyboardButton(btn_text, callback_data=f"catstory#{story['_id']}")])
+    
+    buttons.append([InlineKeyboardButton("🔙 Bᴀᴄᴋ ᴛᴏ Hᴏᴍᴇ", callback_data="home_cb")])
+    return InlineKeyboardMarkup(buttons)
+
+
+# 1. Private Chat /start Handler
 @Client.on_message(filters.command("start") & filters.private)
 async def private_start_cmd(bot: Client, message: Message):
     # ⚡ Instant Wait Response
@@ -104,7 +125,7 @@ async def private_start_cmd(bot: Client, message: Message):
             print(f"⚠️ Log Channel error: {e}")
 
 
-# 2. Group /start Handler (Delete Wait Msg & Send Group UI)
+# 2. Group /start Handler
 @Client.on_message(filters.command("start") & ~filters.private)
 async def group_start_cmd(bot: Client, message: Message):
     # ⚡ Instant Wait Response
@@ -133,12 +154,34 @@ async def group_start_cmd(bot: Client, message: Message):
         parse_mode=ParseMode.HTML
     )
 
-    # Auto-delete group start message & user command after 2 minutes (120s)
     asyncio.create_task(auto_delete_msg(group_msg, 120))
     asyncio.create_task(auto_delete_msg(message, 120))
 
 
-# 3. System Restart Command (Render Supported)
+# 3. /favorites Command Handler
+@Client.on_message(filters.command(["favorites", "fav", "mybook"]) & filters.private)
+async def user_favorites_command(bot: Client, message: Message):
+    user_id = message.from_user.id
+    fav_stories = await get_user_favorites_db(user_id)
+
+    if not fav_stories:
+        return await message.reply_text(
+            "⭐ <b>आपकी फेवरेट लिस्ट अभी खाली है!</b>\n\n"
+            "किसी भी स्टोरी कार्ड पर मौजूद <b>'⭐ Aᴅᴅ Fᴀᴠᴏʀɪᴛᴇ'</b> बटन पर क्लिक करके उसे यहाँ सेव करें।",
+            parse_mode=ParseMode.HTML
+        )
+
+    markup = build_favs_keyboard(fav_stories)
+    await message.reply_text(
+        f"⭐ <b><u>YOUR FAVORITE STORIES</u></b>\n\n"
+        f"Total Saved Stories: <b>{len(fav_stories)}</b>\n"
+        f"नीचे दी गई लिस्ट में से अपनी पसंद की स्टोरी चुनें:",
+        reply_markup=markup,
+        parse_mode=ParseMode.HTML
+    )
+
+
+# 4. System Restart Command
 @Client.on_message(filters.command("restart") & filters.private)
 async def restart_bot_handler(bot: Client, message: Message):
     if message.from_user.id not in Config.ADMIN_IDS:
@@ -149,24 +192,21 @@ async def restart_bot_handler(bot: Client, message: Message):
         parse_mode=ParseMode.HTML
     )
 
-    # Save details to edit command response on bootup
     try:
         with open("restart_info.txt", "w") as f:
             f.write(f"{restart_msg.chat.id}\n{restart_msg.id}")
     except Exception:
         pass
 
-    # Stop Client & Exit Process Safely
     try:
         await bot.stop()
     except Exception:
         pass
 
-    # Instant exit signal for Render auto-restart container
     os._exit(0)
 
 
-# 4. Callbacks for About, Help, Home, and Random
+# 5. Callback Query Handlers
 @Client.on_callback_query()
 async def cb_handler(bot: Client, query: CallbackQuery):
     data = query.data
@@ -206,18 +246,53 @@ async def cb_handler(bot: Client, query: CallbackQuery):
             parse_mode=ParseMode.HTML
         )
 
+    elif data == "show_favs":
+        fav_stories = await get_user_favorites_db(user_id)
+        
+        if not fav_stories:
+            return await query.answer("⭐ आपकी फेवरेट लिस्ट अभी खाली है!", show_alert=True)
+
+        markup = build_favs_keyboard(fav_stories)
+        await query.message.edit_text(
+            f"⭐ <b><u>YOUR FAVORITE STORIES</u></b>\n\n"
+            f"Total Saved Stories: <b>{len(fav_stories)}</b>\n"
+            f"नीचे दी गई लिस्ट में से अपनी पसंद की स्टोरी चुनें:",
+            reply_markup=markup,
+            parse_mode=ParseMode.HTML
+        )
+        await query.answer()
+
+    elif data.startswith("fav#toggle#"):
+        story_id = data.split("#")[2]
+        is_now_fav, alert_msg = await toggle_favorite_db(user_id, story_id)
+        
+        # Refetch story to update inline UI buttons
+        try:
+            story = await stories_col.find_one({"_id": ObjectId(story_id)})
+        except Exception:
+            story = None
+
+        if story:
+            updated_markup = build_story_buttons(story, is_fav=is_now_fav)
+            try:
+                await query.message.edit_reply_markup(reply_markup=updated_markup)
+            except Exception:
+                pass
+
+        await query.answer(alert_msg, show_alert=False)
+
     elif data == "fetch_next_random":
         story = await get_random_story_db()
         
         if not story:
             return await query.answer("❌ डेटाबेस में कोई स्टोरी उपलब्ध नहीं है!", show_alert=True)
 
+        is_fav = await is_story_favorite_db(user_id, str(story["_id"]))
         caption = build_aesthetic_caption(story)
-        buttons = build_story_buttons(story)
+        buttons = build_story_buttons(story, is_fav=is_fav)
 
-        # Include "Next Random" button alongside rating buttons
         button_list = buttons.inline_keyboard
-        button_list.insert(1, [InlineKeyboardButton("🎲 Nᴇxᴛ Rᴀɴᴅᴏᴍ", callback_data="fetch_next_random")])
+        button_list.insert(2, [InlineKeyboardButton("🎲 Nᴇxᴛ Rᴀɴᴅᴏᴍ", callback_data="fetch_next_random")])
         final_markup = InlineKeyboardMarkup(button_list)
 
         try:
