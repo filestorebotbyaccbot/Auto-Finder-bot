@@ -4,6 +4,8 @@ from bson.objectid import ObjectId
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, InputMediaPhoto
 from pyrogram.enums import ParseMode
+from pyrogram.errors import UserNotParticipant
+from config import Config
 from database.stories_db import (
     search_story_db, 
     stories_col, 
@@ -16,6 +18,23 @@ from database.stories_db import (
 )
 
 PAGE_SIZE = 5  # एक पेज पर कितनी स्टोरीज दिखेंगी
+
+
+# --- Helper Function to Check Force Subscribe ---
+async def check_force_sub(bot: Client, user_id: int) -> bool:
+    """Checks if user has joined the Force Sub Channel (if enabled)"""
+    if not getattr(Config, "FSUB_ENABLE", True) or not getattr(Config, "FORCE_SUB_CHANNEL", None):
+        return True
+        
+    try:
+        user_member = await bot.get_chat_member(Config.FORCE_SUB_CHANNEL, user_id)
+        if user_member.status in ["kicked", "banned"]:
+            return False
+        return True
+    except UserNotParticipant:
+        return False
+    except Exception:
+        return True
 
 
 # --- Helper Function for Background Message Auto-Deletion ---
@@ -32,9 +51,7 @@ async def delete_messages_later(messages_to_delete: list, delay_seconds: int):
 
 # --- Helper Function to Build Aesthetic HTML Caption ---
 def build_aesthetic_caption(story: dict) -> str:
-    """
-    Constructs screenshot-style UI layout with Expandable Blockquote description
-    """
+    """Constructs screenshot-style UI layout with Expandable Blockquote description"""
     title = story.get("title", "Unknown Story")
     status = story.get("status", "Ongoing")
     platform = story.get("platform", "Pocket FM")
@@ -42,7 +59,6 @@ def build_aesthetic_caption(story: dict) -> str:
     episodes = story.get("episodes", "1 / ∞")
     description = story.get("description", "No description available for this story.")
 
-    # Status Emoji
     status_emoji = "🟢" if str(status).lower() in ["completed", "complete"] else "♨️"
 
     caption = (
@@ -82,12 +98,10 @@ def build_story_buttons(story: dict, is_fav: bool = False) -> InlineKeyboardMark
 def build_category_keyboard(stories: list, category_name: str, page: int, total_pages: int):
     buttons = []
     
-    # Story Item Buttons
     for story in stories:
         btn_text = f"📖 {story['title'][:22]}"
         buttons.append([InlineKeyboardButton(btn_text, callback_data=f"catstory#{story['_id']}")])
 
-    # Pagination Navigation Row (Prev | Page X/Y | Next)
     nav_row = []
     if page > 1:
         nav_row.append(InlineKeyboardButton("◀️ Prev", callback_data=f"pgcat#{category_name}#{page - 1}"))
@@ -106,9 +120,6 @@ def build_category_keyboard(stories: list, category_name: str, page: int, total_
 # --- 🎲 RANDOM STORY COMMAND HANDLER ---
 @Client.on_message(filters.command(["random", "surpriseme"]) & (filters.group | filters.private))
 async def random_story_handler(bot: Client, message: Message):
-    """
-    Fetches and displays a random story with 'Another Random' button.
-    """
     story = await get_random_story_db()
     
     if not story:
@@ -153,7 +164,6 @@ async def next_random_callback(bot: Client, query: CallbackQuery):
     caption = build_aesthetic_caption(story)
     buttons = build_story_buttons(story, is_fav=is_fav)
 
-    # Insert Next Random Button in keyboard layout
     button_list = buttons.inline_keyboard
     button_list.insert(2, [InlineKeyboardButton("🎲 Nᴇxᴛ Rᴀɴᴅᴏᴍ", callback_data="fetch_next_random")])
     final_markup = InlineKeyboardMarkup(button_list)
@@ -195,8 +205,52 @@ async def next_random_callback(bot: Client, query: CallbackQuery):
 )
 async def search_handler(bot: Client, message: Message):
     user_query = message.text.strip()
+    user_id = message.from_user.id
     if len(user_query) < 2:
         return
+
+    # -------------------------------------------------------------
+    # 🛑 0. CHECK TOGGLES (PM DISABLE & FORCE SUB)
+    # -------------------------------------------------------------
+    # A. Check PM Restriction
+    if message.chat.type.value == "private" and getattr(Config, "DISABLE_PM_SEARCH", False):
+        group_url = getattr(Config, "SUPPORT_GROUP", None) or getattr(Config, "FORCE_SUB_LINK", "https://t.me")
+        pm_restrict_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💬 Jᴏɪɴ Sᴜᴘᴘᴏʀᴛ Gʀᴏᴜᴘ", url=group_url)]
+        ])
+        return await message.reply_text(
+            text=(
+                f"🎉 <b>Yᴏᴜʀ Sᴛᴏʀʏ Fᴏᴜɴᴅ!</b>\n\n"
+                f"⚠️ <i>PM सर्च अभी बंद है। अपनी पसंदीदा स्टोरी पाने के लिए हमारे ग्रुप में जाकर सर्च करें!</i>"
+            ),
+            reply_markup=pm_restrict_markup,
+            parse_mode=ParseMode.HTML
+        )
+
+    # B. Check Force Subscribe
+    is_subscribed = await check_force_sub(bot, user_id)
+    if not is_subscribed:
+        fsub_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📢 Jᴏɪɴ Cʜᴀɴɴᴇʟ", url=getattr(Config, "FORCE_SUB_LINK", "https://t.me"))],
+            [InlineKeyboardButton("🔄 Tʀʏ Aɢᴀɪɴ", callback_data=f"chk_fsub#{message.id}")]
+        ])
+        
+        fsub_msg = await message.reply_text(
+            text=(
+                f"👋 <b>Hᴇʏ {message.from_user.mention}!</b>\n\n"
+                f"🎉 <b>Yᴏᴜʀ Sᴛᴏʀʏ Fᴏᴜɴᴅ!</b>\n"
+                f"Pʟᴇᴀsᴇ sᴜʙsᴄʀɪʙᴇ ᴛᴏ ᴏᴜʀ Uᴘᴅᴀᴛᴇ Cʜᴀɴɴᴇʟ ᴛᴏ ᴀᴄᴄᴇss ᴀɴᴅ sᴇᴀʀᴄʜ sᴛᴏʀɪᴇs.\n\n"
+                f"👉 <i>Cʟɪᴄᴋ Jᴏɪɴ Cʜᴀɴɴᴇʟ ᴀɴᴅ ᴛʜᴇɴ Tʀʏ Aɢᴀɪɴ!</i>"
+            ),
+            reply_markup=fsub_markup,
+            parse_mode=ParseMode.HTML
+        )
+        
+        to_del = [fsub_msg]
+        if message.chat.type.value != "private":
+            to_del.append(message)
+        return asyncio.create_task(delete_messages_later(to_del, 120))
+
 
     # -------------------------------------------------------------
     # 🔍 1. CATEGORY SEARCH WITH PAGINATION (-drama, #drama, /drama)
@@ -292,6 +346,25 @@ async def search_handler(bot: Client, message: Message):
         )
 
         asyncio.create_task(delete_messages_later([suggestion_msg], 120))
+
+
+# --- 🔄 TRY AGAIN CALLBACK FOR FORCE SUB ---
+@Client.on_callback_query(filters.regex(r"^chk_fsub#"))
+async def check_fsub_callback(bot: Client, query: CallbackQuery):
+    user_id = query.from_user.id
+    is_subscribed = await check_force_sub(bot, user_id)
+
+    if not is_subscribed:
+        return await query.answer(
+            "❌ आप अभी भी चैनल में शामिल नहीं हुए हैं! कृपया पहले जॉइन करें।", 
+            show_alert=True
+        )
+
+    await query.answer("✅ धन्यवाद! अब आप फिर से सर्च कर सकते हैं।", show_alert=True)
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
 
 
 # --- ⭐️ RATING CALLBACK QUERY HANDLER (👍 / 👎 Buttons) ---
