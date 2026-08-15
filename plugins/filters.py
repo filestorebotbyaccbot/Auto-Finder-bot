@@ -3,7 +3,11 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pyrogram.enums import ParseMode
-from database.stories_db import *
+from database.stories_db import (
+    get_all_titles,
+    stories_col,
+    is_story_favorite_db
+)
 from plugins.search import build_aesthetic_caption, build_story_buttons
 
 ITEMS_PER_PAGE = 10  # 10 Buttons per page limit
@@ -95,6 +99,7 @@ async def stories_pagination_callback(bot: Client, query: CallbackQuery):
 @Client.on_callback_query(filters.regex(r"^all_st#"))
 async def story_item_click_callback(bot: Client, query: CallbackQuery):
     selected_title = query.data.split("#", 1)[1]
+    user_id = query.from_user.id
     
     # Fetch story details from MongoDB
     story = await stories_col.find_one({"title": selected_title})
@@ -102,8 +107,9 @@ async def story_item_click_callback(bot: Client, query: CallbackQuery):
     if not story:
         return await query.answer("❌ Story no longer exists!", show_alert=True)
     
+    is_fav = await is_story_favorite_db(user_id, str(story["_id"]))
     caption = build_aesthetic_caption(story)
-    buttons = build_story_buttons(story)
+    buttons = build_story_buttons(story, is_fav=is_fav)
     
     reply_msg = None
     try:
