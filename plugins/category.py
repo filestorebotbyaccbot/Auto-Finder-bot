@@ -2,7 +2,12 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.enums import ParseMode
-from database.stories_db import *
+from database.stories_db import (
+    get_all_categories_db,
+    get_stories_by_category_db,
+    stories_col,
+    is_story_favorite_db
+)
 from bson.objectid import ObjectId
 from plugins.search import build_aesthetic_caption, build_story_buttons
 
@@ -86,6 +91,7 @@ async def category_select_cb(bot: Client, query: CallbackQuery):
 @Client.on_callback_query(filters.regex(r"^catstory#"))
 async def open_category_story_cb(bot: Client, query: CallbackQuery):
     story_id = query.data.split("#", 1)[1]
+    user_id = query.from_user.id
     
     try:
         story = await stories_col.find_one({"_id": ObjectId(story_id)})
@@ -100,8 +106,9 @@ async def open_category_story_cb(bot: Client, query: CallbackQuery):
     except Exception:
         pass
 
+    is_fav = await is_story_favorite_db(user_id, str(story["_id"]))
     caption = build_aesthetic_caption(story)
-    buttons = build_story_buttons(story)
+    buttons = build_story_buttons(story, is_fav=is_fav)
 
     reply_msg = None
     try:
