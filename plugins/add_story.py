@@ -1,5 +1,7 @@
+import asyncio
+import re
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pyrogram.enums import ParseMode
 from config import Config
 from database.stories_db import save_full_story_db
@@ -8,76 +10,124 @@ from database.stories_db import save_full_story_db
 DEFAULT_CATEGORIES = ["Romance", "Horror", "Drama", "Action", "Sci-Fi", "Thriller", "General"]
 DEFAULT_PLATFORMS = ["Pocket FM", "Kuku FM", "YouTube", "Telegram", "Spotify"]
 
+# Cancel Inline Keyboard Helper
+def get_cancel_btn():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ Cancel Process", callback_data="cancel_wizard")]
+    ])
+
 
 @Client.on_message(filters.command(["addstory", "editstory"]) & filters.private)
 async def interactive_add_or_edit_story_handler(bot: Client, message: Message):
     if message.from_user.id not in Config.ADMIN_IDS:
         return await message.reply_text("⛔ **You are not authorized to use this command!**")
 
-    chat_id = message.chat.id
-
     # 📌 Step 1: Story Title
     title_ask = await message.chat.ask(
-        "📝 <b>Step 1/8:</b> स्टोरी का <b>Title</b> भेजिए:\n\n<i>(नोट: केवल पहली लाइन सेव होगी)</i>",
+        "📝 <b>Step 1/8:</b> स्टोरी का <b>Title</b> भेजिए:\n\n"
+        "<i>(नोट: केवल पहली लाइन सेव होगी | Cancel करने के लिए /cancel लिखें)</i>",
+        reply_markup=get_cancel_btn(),
         parse_mode=ParseMode.HTML
     )
-    if not title_ask.text:
-        return await message.reply_text("❌ Invalid Title. Process Cancelled!")
+    if not title_ask.text or title_ask.text.strip().lower() == "/cancel":
+        return await message.reply_text("❌ **Add Story Process Cancelled!**")
     
     # Save strictly only the first line of title
     story_title = title_ask.text.strip().split("\n")[0].strip()
+    if len(story_title) < 2:
+        return await message.reply_text("❌ **Invalid Title Length! Process Cancelled.**")
+
 
     # 🖼️ Step 2: Photo / Banner
     photo_ask = await message.chat.ask(
-        "🖼️ <b>Step 2/8:</b> स्टोरी का <b>Photo / Banner</b> भेजें (या Photo File ID / URL भी भेज सकते हैं):",
+        "🖼️ <b>Step 2/8:</b> स्टोरी का <b>Photo / Banner</b> भेजें (Photo upload करें या Photo URL/File ID भेजें):",
+        reply_markup=get_cancel_btn(),
         parse_mode=ParseMode.HTML
     )
-    story_photo = photo_ask.photo.file_id if photo_ask.photo else (photo_ask.text.strip() if photo_ask.text else "https://telegra.ph/file/default_banner.jpg")
+    if photo_ask.text and photo_ask.text.strip().lower() == "/cancel":
+        return await message.reply_text("❌ **Add Story Process Cancelled!**")
+
+    story_photo = (
+        photo_ask.photo.file_id if photo_ask.photo 
+        else (photo_ask.text.strip() if photo_ask.text else "https://telegra.ph/file/default_banner.jpg")
+    )
+
 
     # 🔗 Step 3: Story Link
     link_ask = await message.chat.ask(
-        "🔗 <b>Step 3/8:</b> स्टोरी का <b>Play / Read Link</b> भेजें:",
+        "🔗 <b>Step 3/8:</b> स्टोरी का <b>Play / Read Link</b> (URL) भेजें:",
+        reply_markup=get_cancel_btn(),
         parse_mode=ParseMode.HTML
     )
-    if not link_ask.text:
-        return await message.reply_text("❌ Invalid Link. Process Cancelled!")
+    if not link_ask.text or link_ask.text.strip().lower() == "/cancel":
+        return await message.reply_text("❌ **Add Story Process Cancelled!**")
+
     story_link = link_ask.text.strip()
+    # Basic URL Validation
+    if not story_link.startswith(("http://", "https://")):
+        return await message.reply_text("❌ **Invalid Link format! http:// या https:// Link भेजें. Process Cancelled.**")
+
 
     # 🔰 Step 4: Status (Ongoing / Completed)
     status_ask = await message.chat.ask(
         "🔰 <b>Step 4/8:</b> स्टोरी का <b>Status</b> लिखें:\n\n💡 <i>उदाहरण: <code>Ongoing</code> या <code>Completed</code></i>",
+        reply_markup=get_cancel_btn(),
         parse_mode=ParseMode.HTML
     )
+    if status_ask.text and status_ask.text.strip().lower() == "/cancel":
+        return await message.reply_text("❌ **Add Story Process Cancelled!**")
+
     raw_status = status_ask.text.strip() if status_ask.text else "Ongoing"
     story_status = "Completed" if "complete" in raw_status.lower() else "Ongoing"
+
 
     # 🖥️ Step 5: Platform
     plat_ask = await message.chat.ask(
         f"🖥️ <b>Step 5/8:</b> स्टोरी का <b>Platform Name</b> लिखें:\n\n💡 <i>Suggested: {', '.join(DEFAULT_PLATFORMS)}</i>",
+        reply_markup=get_cancel_btn(),
         parse_mode=ParseMode.HTML
     )
+    if plat_ask.text and plat_ask.text.strip().lower() == "/cancel":
+        return await message.reply_text("❌ **Add Story Process Cancelled!**")
+
     story_platform = plat_ask.text.strip() if plat_ask.text else "Pocket FM"
+
 
     # 🧩 Step 6: Category / Genre
     cat_ask = await message.chat.ask(
         f"🧩 <b>Step 6/8:</b> स्टोरी की <b>Category / Genre</b> लिखें:\n\n💡 <i>Suggested: {', '.join(DEFAULT_CATEGORIES)}</i>",
+        reply_markup=get_cancel_btn(),
         parse_mode=ParseMode.HTML
     )
+    if cat_ask.text and cat_ask.text.strip().lower() == "/cancel":
+        return await message.reply_text("❌ **Add Story Process Cancelled!**")
+
     story_genre = cat_ask.text.strip().capitalize() if cat_ask.text else "General"
+
 
     # 🎬 Step 7: Episodes Count
     ep_ask = await message.chat.ask(
         "🎬 <b>Step 7/8:</b> स्टोरी के <b>Episodes</b> की संख्या लिखें:\n\n💡 <i>उदाहरण: <code>415 / ∞</code> या <code>100 Complete</code></i>",
+        reply_markup=get_cancel_btn(),
         parse_mode=ParseMode.HTML
     )
+    if ep_ask.text and ep_ask.text.strip().lower() == "/cancel":
+        return await message.reply_text("❌ **Add Story Process Cancelled!**")
+
     story_episodes = ep_ask.text.strip() if ep_ask.text else "1 / ∞"
+
 
     # 📝 Step 8: Description
     desc_ask = await message.chat.ask(
         "📝 <b>Step 8/8:</b> स्टोरी का <b>Story Description</b> भेजें:",
+        reply_markup=get_cancel_btn(),
         parse_mode=ParseMode.HTML
     )
+    if desc_ask.text and desc_ask.text.strip().lower() == "/cancel":
+        return await message.reply_text("❌ **Add Story Process Cancelled!**")
+
     story_description = desc_ask.text.strip() if desc_ask.text else "No description provided."
+
 
     # 💾 Save Complete Metadata to MongoDB
     await save_full_story_db(
@@ -124,3 +174,13 @@ async def interactive_add_or_edit_story_handler(bot: Client, message: Message):
             reply_markup=preview_btn,
             parse_mode=ParseMode.HTML
         )
+
+
+# --- Callback Handler for Cancel Button ---
+@Client.on_callback_query(filters.regex("^cancel_wizard$"))
+async def cancel_wizard_cb(bot: Client, query: CallbackQuery):
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+    await query.message.reply_text("❌ **Story Addition Process Cancelled!**")
