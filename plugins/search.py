@@ -14,7 +14,8 @@ from database.stories_db import (
     get_top_categories_db,
     get_random_story_db,
     rate_story_db,
-    is_story_favorite_db
+    is_story_favorite_db,
+    toggle_favorite_db
 )
 
 PAGE_SIZE = 5  # एक पेज पर कितनी स्टोरीज दिखेंगी
@@ -132,8 +133,9 @@ async def random_story_handler(bot: Client, message: Message):
         return await message.reply_text("❌ <b>डेटाबेस में कोई स्टोरी उपलब्ध नहीं है!</b>")
 
     is_fav = await is_story_favorite_db(message.from_user.id, str(story["_id"]))
+    is_channel = message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
     caption = build_aesthetic_caption(story)
-    buttons = build_story_buttons(story, is_fav=is_fav, is_channel=(message.chat.type == ChatType.CHANNEL))
+    buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
 
     reply_msg = None
     try:
@@ -304,8 +306,9 @@ async def search_handler(bot: Client, message: Message):
     if result["type"] == "exact":
         story = result["data"]
         is_fav = await is_story_favorite_db(message.from_user.id, str(story["_id"]))
+        is_channel = message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
         caption = build_aesthetic_caption(story)
-        buttons = build_story_buttons(story, is_fav=is_fav, is_channel=(message.chat.type == ChatType.CHANNEL))
+        buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
 
         reply_msg = None
         try:
@@ -387,7 +390,6 @@ async def rate_story_cb(bot: Client, query: CallbackQuery):
 
     if story:
         is_fav = await is_story_favorite_db(user_id, story_id)
-        # Check if callback trigger source is Channel or Supergroup
         is_channel = query.message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
         updated_buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
         try:
@@ -397,6 +399,35 @@ async def rate_story_cb(bot: Client, query: CallbackQuery):
 
     action_text = "Liked! 👍" if rating_type == "like" else "Disliked! 👎"
     await query.answer(f"Thanks! Story {action_text}")
+
+
+# --- ⭐ FAVORITE TOGGLE CALLBACK QUERY HANDLER ---
+@Client.on_callback_query(filters.regex(r"^fav#"))
+async def toggle_favorite_cb(bot: Client, query: CallbackQuery):
+    try:
+        _, action, story_id = query.data.split("#")
+        user_id = query.from_user.id
+
+        is_fav, alert_msg = await toggle_favorite_db(user_id, story_id)
+
+        try:
+            story = await stories_col.find_one({"_id": ObjectId(story_id)})
+        except Exception:
+            story = None
+
+        if story:
+            is_channel = query.message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
+            updated_buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
+            try:
+                await query.message.edit_reply_markup(reply_markup=updated_buttons)
+            except Exception:
+                pass
+
+        await query.answer(alert_msg, show_alert=True)
+
+    except Exception as e:
+        print(f"⚠️ [Favorite Callback Error]: {e}")
+        await query.answer("⚠️ Action failed!", show_alert=True)
 
 
 # --- 🔥 TOP CATEGORIES COMMAND HANDLER ---
