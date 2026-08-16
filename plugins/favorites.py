@@ -2,7 +2,7 @@ import math
 import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from pyrogram.enums import ParseMode
+from pyrogram.enums import ParseMode, ChatType
 from database.stories_db import toggle_favorite_db, get_user_favorites_db, stories_col, users_col
 from bson.objectid import ObjectId
 from plugins.search import build_aesthetic_caption, build_story_buttons, delete_messages_later
@@ -81,10 +81,11 @@ async def toggle_favorite_cb(bot: Client, query: CallbackQuery):
     is_added, alert_msg = await toggle_favorite_db(user_id, story_id)
     await query.answer(alert_msg, show_alert=False)
 
-    # Refresh card buttons live
+    # Refresh card buttons live with Channel check
     story = await stories_col.find_one({"_id": ObjectId(story_id)})
     if story:
-        updated_markup = build_story_buttons(story, is_fav=is_added)
+        is_channel = query.message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
+        updated_markup = build_story_buttons(story, is_fav=is_added, is_channel=is_channel)
         try:
             await query.message.edit_reply_markup(reply_markup=updated_markup)
         except Exception:
@@ -112,3 +113,4 @@ async def fav_pagination_cb(bot: Client, query: CallbackQuery):
         pass
     await query.answer()
 
+#favorites.py
