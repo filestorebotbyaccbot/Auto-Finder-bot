@@ -1,21 +1,127 @@
 import asyncio
 import re
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, InputMediaPhoto
 from pyrogram.enums import ParseMode
 from config import Config
-from database.stories_db import save_full_story_db
+from database.stories_db import save_full_story_db, save_channel_msg_id
 
 # Predefined Suggestions for quick typing
 DEFAULT_CATEGORIES = ["Romance", "Horror", "Drama", "Action", "Sci-Fi", "Thriller", "General"]
 DEFAULT_PLATFORMS = ["Pocket FM", "Kuku FM", "YouTube", "Telegram", "Spotify"]
 
-# Cancel Inline Keyboard Helper
+
+# --- Cancel Inline Keyboard Helper ---
 def get_cancel_btn():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("❌ Cancel Process", callback_data="cancel_wizard")]
     ])
 
+
+# --- 📢 UPDATE CHANNEL HELPERS ---
+
+def build_channel_caption(story: dict) -> str:
+    """चैनल पोस्ट के लिए एस्थेटिक कैप्श्न तैयार करता है"""
+    title = story.get("title", "Unknown Story")
+    status = story.get("status", "Ongoing")
+    platform = story.get("platform", "Pocket FM")
+    genre = story.get("category", story.get("genre", "General")).capitalize()
+    episodes = story.get("episodes", "1 / ∞")
+    description = story.get("description", "No description available.")
+
+    status_emoji = "🟢" if str(status).lower() in ["completed", "complete"] else "♨️"
+
+    caption = (
+        f"<b>📢 NEW STORY / UPDATE!</b>\n\n"
+        f"<b>{status_emoji}Story : {title}</b>\n"
+        f"<b>🔰Status : {str(status).capitalize()}</b>\n"
+        f"<b>🖥️Platform : {platform}</b>\n"
+        f"<b>🧩Genre : {genre}</b>\n"
+        f"<b>🎬Episodes : {episodes}</b>\n"
+        f"═══════════════════\n"
+        f"📝 <b>Story Description :-</b>\n"
+        f"<blockquote expandable>{description}</blockquote>\n\n"
+        f"🔔 <i>Stay tuned for daily updates!</i>"
+    )
+    return caption
+
+
+def build_channel_buttons(story: dict) -> InlineKeyboardMarkup:
+    """चैनल पोस्ट के लिए बटन्स (बिना क्लोज बटन के)"""
+    likes_count = len(story.get("likes", [])) if isinstance(story.get("likes"), list) else story.get("likes", 0)
+    dislikes_count = len(story.get("dislikes", [])) if isinstance(story.get("dislikes"), list) else story.get("dislikes", 0)
+    story_id = str(story["_id"])
+
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎧 Lɪsᴛᴇɴ / Pʟᴀʏ Sᴛᴏʀʏ", url=story["link"])],
+        [
+            InlineKeyboardButton(f"👍 {likes_count}", callback_data=f"rate#like#{story_id}"),
+            InlineKeyboardButton(f"👎 {dislikes_count}", callback_data=f"rate#dislike#{story_id}")
+        ],
+        [InlineKeyboardButton("⭐ Aᴅᴅ Fᴀᴠᴏʀɪᴛᴇ", callback_data=f"fav#toggle#{story_id}")]
+    ])
+
+
+async def broadcast_or_sync_to_channel(bot: Client, story: dict):
+    """अपडेट चैनल में नयी स्टोरी पोस्ट करता है या पुरानी को ऑटो-अपडेट करता है"""
+    channel_id = getattr(Config, "UPDATE_CHANNEL", None)
+    if not channel_id:
+        return
+
+    caption = build_channel_caption(story)
+    buttons = build_channel_buttons(story)
+    msg_id = story.get("channel_message_id")
+
+    # 1. अगर पहले से चैनल में पोस्टेड है तो EDIT करें
+    if msg_id:
+        try:
+            if story.get("photo"):
+                await bot.edit_message_media(
+                    chat_id=channel_id,
+                    message_id=msg_id,
+                    media=InputMediaPhoto(media=story["photo"], caption=caption, parse_mode=ParseMode.HTML),
+                    reply_markup=buttons
+                )
+            else:
+                await bot.edit_message_text(
+                    chat_id=channel_id,
+                    message_id=msg_id,
+                    text=caption,
+                    reply_markup=buttons,
+                    disable_web_page_preview=True,
+                    parse_mode=ParseMode.HTML
+                )
+            return
+        except Exception as e:
+            print(f"⚠️ [Channel Sync Edit Error]: {e}")
+
+    # 2. अगर पोस्टेड नहीं है तो NEW POST करें
+    sent_msg = None
+    try:
+        if story.get("photo"):
+            sent_msg = await bot.send_photo(
+                chat_id=channel_id,
+                photo=story["photo"],
+                caption=caption,
+                reply_markup=buttons,
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            sent_msg = await bot.send_message(
+                chat_id=channel_id,
+                text=caption,
+                reply_markup=buttons,
+                disable_web_page_preview=True,
+                parse_mode=ParseMode.HTML
+            )
+
+        if sent_msg:
+            await save_channel_msg_id(str(story["_id"]), sent_msg.id)
+    except Exception as e:
+        print(f"❌ [Channel Post Error]: {e}")
+
+
+# --- Main Command Handler ---
 
 @Client.on_message(filters.command(["addstory", "editstory"]) & filters.private)
 async def interactive_add_or_edit_story_handler(bot: Client, message: Message):
@@ -129,8 +235,8 @@ async def interactive_add_or_edit_story_handler(bot: Client, message: Message):
     story_description = desc_ask.text.strip() if desc_ask.text else "No description provided."
 
 
-    # 💾 Save Complete Metadata to MongoDB
-    await save_full_story_db(
+    # 💾 Save / Update Complete Metadata in MongoDB
+    saved_story = await save_full_story_db(
         title=story_title,
         photo=story_photo,
         link=story_link,
@@ -140,6 +246,10 @@ async def interactive_add_or_edit_story_handler(bot: Client, message: Message):
         episodes=story_episodes,
         description=story_description
     )
+
+    # 🚀 Trigger Update Channel Auto-Post / Sync
+    if saved_story:
+        asyncio.create_task(broadcast_or_sync_to_channel(bot, saved_story))
 
     # Preview Layout Setup
     status_emoji = "🟢" if story_status == "Completed" else "♨️"
