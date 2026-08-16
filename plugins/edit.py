@@ -1,6 +1,6 @@
 import asyncio
 from pyrogram import Client, filters
-from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from pyrogram.enums import ParseMode
 from config import Config
 from database.stories_db import stories_col, clean_text_for_search, update_story_field_db
@@ -22,6 +22,7 @@ def build_aesthetic_caption(story: dict) -> str:
     status_emoji = "🟢" if str(status).lower() in ["completed", "complete"] else "♨️"
 
     caption = (
+        f"<b>📢 NEW STORY / UPDATE!</b>\n\n"
         f"<b>{status_emoji}Story : {title}</b>\n"
         f"<b>🔰Status : {str(status).capitalize()}</b>\n"
         f"<b>🖥️Platform : {platform}</b>\n"
@@ -29,9 +30,58 @@ def build_aesthetic_caption(story: dict) -> str:
         f"<b>🎬Episodes : {episodes}</b>\n"
         f"═══════════════════\n"
         f"📝 <b>Story Description :-</b>\n"
-        f"<blockquote expandable>{description}</blockquote>"
+        f"<blockquote expandable>{description}</blockquote>\n\n"
+        f"🔔 <i>Stay tuned for daily updates!</i>"
     )
     return caption
+
+
+def build_channel_buttons(story: dict) -> InlineKeyboardMarkup:
+    """चैनल पोस्ट के लिए बटन्स"""
+    likes_count = len(story.get("likes", [])) if isinstance(story.get("likes"), list) else story.get("likes", 0)
+    dislikes_count = len(story.get("dislikes", [])) if isinstance(story.get("dislikes"), list) else story.get("dislikes", 0)
+    story_id = str(story["_id"])
+
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎧 Lɪsᴛᴇɴ / Pʟᴀʏ Sᴛᴏʀʏ", url=story["link"])],
+        [
+            InlineKeyboardButton(f"👍 {likes_count}", callback_data=f"rate#like#{story_id}"),
+            InlineKeyboardButton(f"👎 {dislikes_count}", callback_data=f"rate#dislike#{story_id}")
+        ],
+        [InlineKeyboardButton("⭐ Aᴅᴅ Fᴀᴠᴏʀɪᴛᴇ", callback_data=f"fav#toggle#{story_id}")]
+    ])
+
+
+async def sync_edited_story_to_channel(bot: Client, story: dict):
+    """Update Channel पर मौजूद पोस्ट को लाइव एडिट करता है"""
+    channel_id = getattr(Config, "UPDATE_CHANNEL", None)
+    msg_id = story.get("channel_message_id")
+
+    if not channel_id or not msg_id:
+        return
+
+    caption = build_aesthetic_caption(story)
+    buttons = build_channel_buttons(story)
+
+    try:
+        if story.get("photo"):
+            await bot.edit_message_media(
+                chat_id=channel_id,
+                message_id=msg_id,
+                media=InputMediaPhoto(media=story["photo"], caption=caption, parse_mode=ParseMode.HTML),
+                reply_markup=buttons
+            )
+        else:
+            await bot.edit_message_text(
+                chat_id=channel_id,
+                message_id=msg_id,
+                text=caption,
+                reply_markup=buttons,
+                disable_web_page_preview=True,
+                parse_mode=ParseMode.HTML
+            )
+    except Exception as e:
+        print(f"⚠️ [Edit Command Channel Sync Error]: {e}")
 
 
 # 1. Main Edit Command (/edit Story Name)
@@ -151,12 +201,23 @@ async def edit_callback_handler(bot: Client, query: CallbackQuery):
             if not updated_story:
                 return await bot.send_message(query.message.chat.id, "✅ <b>Successfully Updated!</b>")
 
-            # Build aesthetic preview
+            # 🚀 Auto-Sync live changes to Update Channel
+            asyncio.create_task(sync_edited_story_to_channel(bot, updated_story))
+
+            # Build aesthetic preview for admin
+            status_emoji = "🟢" if str(updated_story.get('status', '')).lower() in ["completed", "complete"] else "♨️"
             preview_caption = (
                 f"✅ <b><u>FIELD UPDATED SUCCESSFULLY!</u></b>\n"
                 f"📌 <b>Updated Field:</b> <code>{field.capitalize()}</code>\n"
                 f"═══════════════════\n"
-                f"{build_aesthetic_caption(updated_story)}"
+                f"<b>{status_emoji}Story : {updated_story.get('title')}</b>\n"
+                f"<b>🔰Status : {str(updated_story.get('status')).capitalize()}</b>\n"
+                f"<b>🖥️Platform : {updated_story.get('platform')}</b>\n"
+                f"<b>🧩Genre : {str(updated_story.get('category', updated_story.get('genre'))).capitalize()}</b>\n"
+                f"<b>🎬Episodes : {updated_story.get('episodes')}</b>\n"
+                f"═══════════════════\n"
+                f"📝 <b>Story Description :-</b>\n"
+                f"<blockquote expandable>{updated_story.get('description')}</blockquote>"
             )
 
             photo_url = updated_story.get("photo")
@@ -168,7 +229,7 @@ async def edit_callback_handler(bot: Client, query: CallbackQuery):
             ])
 
             # Try sending with Photo so cover photo doesn't disappear
-            if photo_url and photo_url.startswith("http"):
+            if photo_url and (photo_url.startswith("http") or not photo_url.startswith("http")):
                 try:
                     return await bot.send_photo(
                         chat_id=query.message.chat.id,
@@ -193,3 +254,5 @@ async def edit_callback_handler(bot: Client, query: CallbackQuery):
 
     except asyncio.TimeoutError:
         await ask_msg.edit_text("⏱️ <b>Timeout! You didn't send any message in 60 seconds.</b>", parse_mode=ParseMode.HTML)
+
+
