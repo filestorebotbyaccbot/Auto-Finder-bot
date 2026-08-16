@@ -137,7 +137,9 @@ async def save_full_story_db(
         {"$set": story_data},
         upsert=True
     )
-    return True
+    
+    # Return saved story document (with _id)
+    return await stories_col.find_one({"search_title": story_data["search_title"]})
 
 
 async def add_story_db(title: str, photo: str, link: str, description: str = ""):
@@ -161,23 +163,53 @@ async def add_story_with_category_db(title: str, photo: str, link: str, category
     )
 
 
-async def update_story_field_db(title: str, field_name: str, new_value: str) -> bool:
+# --- 📢 UPDATE CHANNEL SYNC HELPER FUNCTIONS ---
+
+async def save_channel_msg_id(story_id: str, message_id: int):
+    """Saves the channel's post Message ID inside the story MongoDB document."""
+    try:
+        await stories_col.update_one(
+            {"_id": ObjectId(story_id)},
+            {"$set": {"channel_message_id": message_id}}
+        )
+        return True
+    except Exception as e:
+        print(f"❌ [DB SAVE CHANNEL MSG ERROR]: {e}")
+        return False
+
+
+async def get_story_by_id(story_id: str):
+    """Fetches a story by its MongoDB ObjectId string."""
+    try:
+        if ObjectId.is_valid(story_id):
+            return await stories_col.find_one({"_id": ObjectId(story_id)})
+        return None
+    except Exception:
+        return None
+
+
+async def update_story_field_db(title: str, field_name: str, new_value: str):
     """
-    Updates a single field (status, platform, genre, episodes, description, link, photo) of a story.
+    Updates a single field of a story and returns the updated document.
+    Useful for channel auto-sync on edits.
     """
     clean_query = clean_text_for_search(title)
     story = await stories_col.find_one({"$or": [{"search_title": clean_query}, {"title": title.strip()}]})
     
     if not story:
-        return False
+        return None
 
     update_data = {field_name: new_value.strip()}
     if field_name in ["genre", "category"]:
         update_data["genre"] = new_value.strip().capitalize()
         update_data["category"] = new_value.strip().capitalize()
+    elif field_name == "status":
+        update_data["status"] = new_value.strip().capitalize()
 
     await stories_col.update_one({"_id": story["_id"]}, {"$set": update_data})
-    return True
+    
+    # Return latest document for channel sync
+    return await stories_col.find_one({"_id": story["_id"]})
 
 
 async def get_all_titles():
