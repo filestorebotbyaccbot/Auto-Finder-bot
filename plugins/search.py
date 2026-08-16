@@ -76,9 +76,9 @@ def build_aesthetic_caption(story: dict) -> str:
     return caption
 
 
-# --- Helper Function to Build Rating & Favorite Buttons ---
-def build_story_buttons(story: dict, is_fav: bool = False, is_channel: bool = False) -> InlineKeyboardMarkup:
-    """Builds buttons. Excludes Close button if post is inside a Telegram Channel."""
+# --- Helper Function to Build Rating, Favorite & Powered By Buttons ---
+def build_story_buttons(story: dict, bot_username: str = None, is_fav: bool = False, is_channel: bool = False) -> InlineKeyboardMarkup:
+    """Builds story inline buttons with Dynamic Powered By link."""
     likes_count = len(story.get("likes", [])) if isinstance(story.get("likes"), list) else story.get("likes", 0)
     dislikes_count = len(story.get("dislikes", [])) if isinstance(story.get("dislikes"), list) else story.get("dislikes", 0)
     story_id = str(story["_id"])
@@ -93,6 +93,15 @@ def build_story_buttons(story: dict, is_fav: bool = False, is_channel: bool = Fa
         ],
         [InlineKeyboardButton(fav_text, callback_data=f"fav#toggle#{story_id}")]
     ]
+
+    # ⚡ Dynamic Powered By Button
+    if bot_username:
+        layout.append([
+            InlineKeyboardButton(
+                f"⚡ Pᴏᴡᴇʀᴇᴅ Bʏ @{bot_username}", 
+                url=f"https://t.me/{bot_username}"
+            )
+        ])
 
     # ❌ Only append Close button if NOT in a Channel
     if not is_channel:
@@ -132,10 +141,11 @@ async def random_story_handler(bot: Client, message: Message):
     if not story:
         return await message.reply_text("❌ <b>डेटाबेस में कोई स्टोरी उपलब्ध नहीं है!</b>")
 
+    bot_username = bot.me.username if bot.me else (await bot.get_me()).username
     is_fav = await is_story_favorite_db(message.from_user.id, str(story["_id"]))
     is_channel = message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
     caption = build_aesthetic_caption(story)
-    buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
+    buttons = build_story_buttons(story, bot_username=bot_username, is_fav=is_fav, is_channel=is_channel)
 
     reply_msg = None
     try:
@@ -168,10 +178,11 @@ async def next_random_callback(bot: Client, query: CallbackQuery):
     if not story:
         return await query.answer("❌ कोई अन्य स्टोरी नहीं मिली!", show_alert=True)
 
+    bot_username = bot.me.username if bot.me else (await bot.get_me()).username
     is_fav = await is_story_favorite_db(query.from_user.id, str(story["_id"]))
     caption = build_aesthetic_caption(story)
     is_channel = query.message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
-    buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
+    buttons = build_story_buttons(story, bot_username=bot_username, is_fav=is_fav, is_channel=is_channel)
 
     button_list = buttons.inline_keyboard
     button_list.insert(2, [InlineKeyboardButton("🎲 Nᴇxᴛ Rᴀɴᴅᴏᴍ", callback_data="fetch_next_random")])
@@ -221,7 +232,6 @@ async def search_handler(bot: Client, message: Message):
     # -------------------------------------------------------------
     # 🛑 0. CHECK TOGGLES (PM DISABLE & FORCE SUB)
     # -------------------------------------------------------------
-    # A. Check PM Restriction
     if message.chat.type.value == "private" and getattr(Config, "DISABLE_PM_SEARCH", False):
         group_url = getattr(Config, "SUPPORT_GROUP", None) or getattr(Config, "FORCE_SUB_LINK", "https://t.me")
         pm_restrict_markup = InlineKeyboardMarkup([
@@ -236,7 +246,6 @@ async def search_handler(bot: Client, message: Message):
             parse_mode=ParseMode.HTML
         )
 
-    # B. Check Force Subscribe
     is_subscribed = await check_force_sub(bot, user_id)
     if not is_subscribed:
         fsub_markup = InlineKeyboardMarkup([
@@ -305,10 +314,11 @@ async def search_handler(bot: Client, message: Message):
     # Exact Match
     if result["type"] == "exact":
         story = result["data"]
+        bot_username = bot.me.username if bot.me else (await bot.get_me()).username
         is_fav = await is_story_favorite_db(message.from_user.id, str(story["_id"]))
         is_channel = message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
         caption = build_aesthetic_caption(story)
-        buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
+        buttons = build_story_buttons(story, bot_username=bot_username, is_fav=is_fav, is_channel=is_channel)
 
         reply_msg = None
         try:
@@ -332,7 +342,7 @@ async def search_handler(bot: Client, message: Message):
 
         asyncio.create_task(delete_messages_later(to_delete, 300))
 
-    # Suggestions (Updated to 1x1 Layout)
+    # Suggestions (1x1 Layout)
     elif result["type"] == "suggestions":
         suggestions = result["data"]
         buttons = []
@@ -389,9 +399,10 @@ async def rate_story_cb(bot: Client, query: CallbackQuery):
         story = None
 
     if story:
+        bot_username = bot.me.username if bot.me else (await bot.get_me()).username
         is_fav = await is_story_favorite_db(user_id, story_id)
         is_channel = query.message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
-        updated_buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
+        updated_buttons = build_story_buttons(story, bot_username=bot_username, is_fav=is_fav, is_channel=is_channel)
         try:
             await query.message.edit_reply_markup(reply_markup=updated_buttons)
         except Exception:
@@ -416,8 +427,9 @@ async def toggle_favorite_cb(bot: Client, query: CallbackQuery):
             story = None
 
         if story:
+            bot_username = bot.me.username if bot.me else (await bot.get_me()).username
             is_channel = query.message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
-            updated_buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
+            updated_buttons = build_story_buttons(story, bot_username=bot_username, is_fav=is_fav, is_channel=is_channel)
             try:
                 await query.message.edit_reply_markup(reply_markup=updated_buttons)
             except Exception:
@@ -513,10 +525,11 @@ async def open_category_story_cb(bot: Client, query: CallbackQuery):
     except Exception:
         pass
 
+    bot_username = bot.me.username if bot.me else (await bot.get_me()).username
     is_fav = await is_story_favorite_db(query.from_user.id, str(story["_id"]))
     caption = build_aesthetic_caption(story)
     is_channel = query.message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
-    buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
+    buttons = build_story_buttons(story, bot_username=bot_username, is_fav=is_fav, is_channel=is_channel)
 
     reply_msg = None
     try:
@@ -560,10 +573,11 @@ async def suggestion_click_callback(bot: Client, query: CallbackQuery):
     except Exception:
         pass
 
+    bot_username = bot.me.username if bot.me else (await bot.get_me()).username
     is_fav = await is_story_favorite_db(query.from_user.id, str(story["_id"]))
     caption = build_aesthetic_caption(story)
     is_channel = query.message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
-    buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
+    buttons = build_story_buttons(story, bot_username=bot_username, is_fav=is_fav, is_channel=is_channel)
 
     reply_msg = None
     try:
