@@ -126,20 +126,31 @@ def build_channel_caption(story: dict) -> str:
     return caption
 
 
-def build_channel_buttons(story: dict) -> InlineKeyboardMarkup:
-    """चैनल पोस्ट के लिए बटन्स (Likes, Dislikes & Favorite)"""
+def build_channel_buttons(story: dict, bot_username: str = None) -> InlineKeyboardMarkup:
+    """चैनल पोस्ट के लिए बटन्स (Likes, Dislikes, Favorite & Powered By Bot)"""
     likes_count = len(story.get("likes", [])) if isinstance(story.get("likes"), list) else story.get("likes", 0)
     dislikes_count = len(story.get("dislikes", [])) if isinstance(story.get("dislikes"), list) else story.get("dislikes", 0)
     story_id = str(story["_id"])
 
-    return InlineKeyboardMarkup([
+    keyboard = [
         [InlineKeyboardButton("🎧 Lɪsᴛᴇɴ / Pʟᴀʏ Sᴛᴏʀʏ", url=story["link"])],
         [
             InlineKeyboardButton(f"👍 {likes_count}", callback_data=f"rate#like#{story_id}"),
             InlineKeyboardButton(f"👎 {dislikes_count}", callback_data=f"rate#dislike#{story_id}")
         ],
         [InlineKeyboardButton("⭐ Aᴅᴅ Fᴀᴠᴏʀɪᴛᴇ", callback_data=f"fav#toggle#{story_id}")]
-    ])
+    ]
+
+    # 🚀 Powered By Bot Button Dynamic Addition
+    if bot_username:
+        keyboard.append([
+            InlineKeyboardButton(
+                f"⚡ Pᴏᴡᴇʀᴇᴅ Bʏ @{bot_username}", 
+                url=f"https://t.me/{bot_username}"
+            )
+        ])
+
+    return InlineKeyboardMarkup(keyboard)
 
 
 async def broadcast_or_sync_to_channel(bot: Client, story: dict):
@@ -148,8 +159,11 @@ async def broadcast_or_sync_to_channel(bot: Client, story: dict):
     if not channel_id:
         return
 
+    # बॉट का यूज़रनेम डायनामिकली प्राप्त करें
+    bot_username = bot.me.username if bot.me else (await bot.get_me()).username
+
     caption = build_channel_caption(story)
-    buttons = build_channel_buttons(story)
+    buttons = build_channel_buttons(story, bot_username=bot_username)
     msg_id = story.get("channel_message_id")
 
     # 1. अगर पहले से चैनल में पोस्टेड है तो EDIT करें
@@ -257,5 +271,3 @@ async def auto_index_channel_posts(bot: Client, message: Message):
             await bot.send_message(chat_id=Config.LOG_CHANNEL, text=log_text)
         except Exception as e:
             print(f"⚠️ Log alert error in auto-indexer: {e}")
-
-
