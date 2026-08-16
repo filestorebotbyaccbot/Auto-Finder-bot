@@ -1,9 +1,10 @@
 import re
+import asyncio
 from pyrogram import Client, filters
-from pyrogram.types import Message
-from pyrogram.enums import MessageEntityType
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
+from pyrogram.enums import MessageEntityType, ParseMode
 from config import Config
-from database.stories_db import save_full_story_db
+from database.stories_db import save_full_story_db, save_channel_msg_id
 
 
 def parse_full_metadata(caption: str):
@@ -97,12 +98,118 @@ def extract_custom_link(message: Message) -> str:
         return f"https://t.me/c/{clean_chat_id}/{message.id}"
 
 
+# --- 📢 UPDATE CHANNEL SYNC HELPERS ---
+
+def build_channel_caption(story: dict) -> str:
+    """चैनल पोस्ट के लिए एस्थेटिक कैप्श्न तैयार करता है"""
+    title = story.get("title", "Unknown Story")
+    status = story.get("status", "Ongoing")
+    platform = story.get("platform", "Pocket FM")
+    genre = story.get("category", story.get("genre", "General")).capitalize()
+    episodes = story.get("episodes", "1 / ∞")
+    description = story.get("description", "No description available.")
+
+    status_emoji = "🟢" if str(status).lower() in ["completed", "complete"] else "♨️"
+
+    caption = (
+        f"<b>📢 NEW STORY / UPDATE!</b>\n\n"
+        f"<b>{status_emoji}Story : {title}</b>\n"
+        f"<b>🔰Status : {str(status).capitalize()}</b>\n"
+        f"<b>🖥️Platform : {platform}</b>\n"
+        f"<b>🧩Genre : {genre}</b>\n"
+        f"<b>🎬Episodes : {episodes}</b>\n"
+        f"═══════════════════\n"
+        f"📝 <b>Story Description :-</b>\n"
+        f"<blockquote expandable>{description}</blockquote>\n\n"
+        f"🔔 <i>Stay tuned for daily updates!</i>"
+    )
+    return caption
+
+
+def build_channel_buttons(story: dict) -> InlineKeyboardMarkup:
+    """चैनल पोस्ट के लिए बटन्स (Likes, Dislikes & Favorite)"""
+    likes_count = len(story.get("likes", [])) if isinstance(story.get("likes"), list) else story.get("likes", 0)
+    dislikes_count = len(story.get("dislikes", [])) if isinstance(story.get("dislikes"), list) else story.get("dislikes", 0)
+    story_id = str(story["_id"])
+
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎧 Lɪsᴛᴇɴ / Pʟᴀʏ Sᴛᴏʀʏ", url=story["link"])],
+        [
+            InlineKeyboardButton(f"👍 {likes_count}", callback_data=f"rate#like#{story_id}"),
+            InlineKeyboardButton(f"👎 {dislikes_count}", callback_data=f"rate#dislike#{story_id}")
+        ],
+        [InlineKeyboardButton("⭐ Aᴅᴅ Fᴀᴠᴏʀɪᴛᴇ", callback_data=f"fav#toggle#{story_id}")]
+    ])
+
+
+async def broadcast_or_sync_to_channel(bot: Client, story: dict):
+    """अपडेट चैनल में नयी ऑटो-इंडेक्स स्टोरी पोस्ट करता है या एडिट करता है"""
+    channel_id = getattr(Config, "UPDATE_CHANNEL", None)
+    if not channel_id:
+        return
+
+    caption = build_channel_caption(story)
+    buttons = build_channel_buttons(story)
+    msg_id = story.get("channel_message_id")
+
+    # 1. अगर पहले से चैनल में पोस्टेड है तो EDIT करें
+    if msg_id:
+        try:
+            if story.get("photo"):
+                await bot.edit_message_media(
+                    chat_id=channel_id,
+                    message_id=msg_id,
+                    media=InputMediaPhoto(media=story["photo"], caption=caption, parse_mode=ParseMode.HTML),
+                    reply_markup=buttons
+                )
+            else:
+                await bot.edit_message_text(
+                    chat_id=channel_id,
+                    message_id=msg_id,
+                    text=caption,
+                    reply_markup=buttons,
+                    disable_web_page_preview=True,
+                    parse_mode=ParseMode.HTML
+                )
+            return
+        except Exception as e:
+            print(f"⚠️ [Auto-Index Channel Sync Edit Error]: {e}")
+
+    # 2. अगर पोस्टेड नहीं है तो NEW POST करें
+    sent_msg = None
+    try:
+        if story.get("photo"):
+            sent_msg = await bot.send_photo(
+                chat_id=channel_id,
+                photo=story["photo"],
+                caption=caption,
+                reply_markup=buttons,
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            sent_msg = await bot.send_message(
+                chat_id=channel_id,
+                text=caption,
+                reply_markup=buttons,
+                disable_web_page_preview=True,
+                parse_mode=ParseMode.HTML
+            )
+
+        if sent_msg:
+            await save_channel_msg_id(str(story["_id"]), sent_msg.id)
+    except Exception as e:
+        print(f"❌ [Auto-Index Channel Post Error]: {e}")
+
+
+# --- Main Event Handler ---
+
 @Client.on_message(filters.chat(Config.SOURCE_CHANNELS) & (filters.photo | filters.text))
 async def auto_index_channel_posts(bot: Client, message: Message):
     """
     Automatically detects new posts in specified source channels,
     extracts Title, Status, Platform, Genre, Episodes, Description, 
     fetches Link, and indexes full metadata into MongoDB.
+    Also triggers broadcast to UPDATE_CHANNEL.
     """
     caption_or_text = message.caption or message.text
     
@@ -119,7 +226,7 @@ async def auto_index_channel_posts(bot: Client, message: Message):
     final_story_link = extract_custom_link(message)
         
     # Save into MongoDB with Full Metadata
-    await save_full_story_db(
+    saved_story = await save_full_story_db(
         title=clean_title,
         photo=photo_id,
         link=final_story_link,
@@ -130,6 +237,10 @@ async def auto_index_channel_posts(bot: Client, message: Message):
         description=description
     )
     
+    # 🚀 Post / Update on Update Channel Automatically
+    if saved_story:
+        asyncio.create_task(broadcast_or_sync_to_channel(bot, saved_story))
+
     # Send Notification to Log Channel
     if Config.LOG_CHANNEL:
         try:
@@ -146,3 +257,5 @@ async def auto_index_channel_posts(bot: Client, message: Message):
             await bot.send_message(chat_id=Config.LOG_CHANNEL, text=log_text)
         except Exception as e:
             print(f"⚠️ Log alert error in auto-indexer: {e}")
+
+
