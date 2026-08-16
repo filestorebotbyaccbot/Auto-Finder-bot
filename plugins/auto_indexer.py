@@ -93,7 +93,7 @@ def extract_custom_link(message: Message) -> str:
 # --- 📢 UPDATE CHANNEL SYNC HELPERS ---
 
 def build_channel_caption(story: dict, bot_username: str = None) -> str:
-    """चैनल पोस्ट के लिए कैप्शन ('Stay tuned' हटाकर नीचे Powered By Link जोड़ा गया है)"""
+    """चैनल पोस्ट के लिए कैप्शन (Hidden Link inside 'Loki')"""
     title = story.get("title", "Unknown Story")
     status = story.get("status", "Ongoing")
     platform = story.get("platform", "Pocket FM")
@@ -102,7 +102,9 @@ def build_channel_caption(story: dict, bot_username: str = None) -> str:
     description = story.get("description", "No description available.")
 
     status_emoji = "🟢" if str(status).lower() in ["completed", "complete"] else "♨️"
-    powered_by_text = f"⚡ <b>Powered By <a href='https://t.me/{bot_username}'>@{bot_username}</a></b>" if bot_username else ""
+    
+    # 🔥 Hyperlinked Text (नाम 'Loki' पर लिंक हिडन रहेगा)
+    powered_by_text = f"⚡ <b>Pᴏᴡᴇʀᴇᴅ Bʏ :</b> <a href='https://t.me/{bot_username}'>Loki</a>\n" if bot_username else ""
 
     caption = (
         f"<b>📢 NEW STORY ADDED ✅!</b>\n\n"
@@ -120,7 +122,7 @@ def build_channel_caption(story: dict, bot_username: str = None) -> str:
 
 
 def build_channel_buttons(story: dict, bot_username: str = None) -> InlineKeyboardMarkup:
-    """चैनल और ग्रुप पोस्ट के लिए Inline Buttons"""
+    """चैनल और ग्रुप पोस्ट के लिए Inline Buttons (Likes, Dislikes, Fav)"""
     likes_count = len(story.get("likes", [])) if isinstance(story.get("likes"), list) else story.get("likes", 0)
     dislikes_count = len(story.get("dislikes", [])) if isinstance(story.get("dislikes"), list) else story.get("dislikes", 0)
     story_id = str(story["_id"])
@@ -133,14 +135,6 @@ def build_channel_buttons(story: dict, bot_username: str = None) -> InlineKeyboa
         ],
         [InlineKeyboardButton("⭐ Aᴅᴅ Fᴀᴠᴏʀɪᴛᴇ", callback_data=f"fav#toggle#{story_id}")]
     ]
-
-    if bot_username:
-        keyboard.append([
-            InlineKeyboardButton(
-                f"⚡ Pᴏᴡᴇʀᴇᴅ Bʏ @{bot_username}", 
-                url=f"https://t.me/{bot_username}"
-            )
-        ])
 
     return InlineKeyboardMarkup(keyboard)
 
@@ -252,11 +246,11 @@ async def auto_index_channel_posts(bot: Client, message: Message):
             print(f"⚠️ Log alert error in auto-indexer: {e}")
 
 
-# 🚀 [FIXED] ग्रुप में ऑटो-फॉरवर्ड होकर आई पोस्ट्स पर बटन्स अटैच करने वाला हैंडलर
+# 🚀 ग्रुप में ऑटो-फॉरवर्ड होकर आई पोस्ट्स पर बटन्स अटैच करने वाला हैंडलर
 @Client.on_message(filters.group & filters.forwarded)
 async def auto_attach_buttons_in_discussion_group(bot: Client, message: Message):
     """
-    चैनल से डिस्कशन ग्रुप में ऑटो-फॉरवर्ड होकर आई पोस्ट पर तुरंत बटन्स (Likes, Dislikes, Fav, Powered By) अटैच करता है।
+    चैनल से डिस्कशन ग्रुप में ऑटो-फॉरवर्ड होकर आई पोस्ट पर तुरंत बटन्स (Likes, Dislikes, Fav) अटैच करता है।
     """
     if not message.forward_from_chat or message.forward_from_chat.type != ChatType.CHANNEL:
         return
@@ -267,7 +261,7 @@ async def auto_attach_buttons_in_discussion_group(bot: Client, message: Message)
 
     # कैप्शन/टेक्स्ट की पहली लाइन से Title निकालें
     first_line = text_content.split("\n")[0].strip()
-    clean_title = first_line.replace("🟢Story :", "").replace("♨️Story :", "").replace("📢 NEW STORY / UPDATE!", "").strip()
+    clean_title = first_line.replace("🟢Story :", "").replace("♨️Story :", "").replace("📢 NEW STORY ADDED ✅!", "").strip()
 
     if not clean_title and len(text_content.split("\n")) > 1:
         clean_title = text_content.split("\n")[1].replace("🟢Story :", "").replace("♨️Story :", "").strip()
