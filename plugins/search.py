@@ -51,8 +51,8 @@ async def delete_messages_later(messages_to_delete: list, delay_seconds: int):
 
 
 # --- Helper Function to Build Aesthetic HTML Caption ---
-def build_aesthetic_caption(story: dict) -> str:
-    """Constructs screenshot-style UI layout with Expandable Blockquote description"""
+def build_aesthetic_caption(story: dict, bot_username: str = None) -> str:
+    """Constructs screenshot-style UI layout with Embedded Hyperlink in Text"""
     title = story.get("title", "Unknown Story")
     status = story.get("status", "Ongoing")
     platform = story.get("platform", "Pocket FM")
@@ -61,6 +61,9 @@ def build_aesthetic_caption(story: dict) -> str:
     description = story.get("description", "No description available for this story.")
 
     status_emoji = "🟢" if str(status).lower() in ["completed", "complete"] else "♨️"
+    
+    # 🔥 Hyperlinked Text (नाम 'Loki' पर लिंक हिडन रहेगा)
+    powered_by_text = f"⚡ <b>Pᴏᴡᴇʀᴇᴅ Bʏ :</b> <a href='https://t.me/{bot_username}'>Loki</a>\n" if bot_username else ""
 
     caption = (
         f"<b>{status_emoji}Story : {title}</b>\n"
@@ -70,15 +73,16 @@ def build_aesthetic_caption(story: dict) -> str:
         f"<b>🎬Episodes : {episodes}</b>\n"
         f"═══════════════════\n"
         f"📝 <b>Story Description :-</b>\n"
-        f"<blockquote expandable>{description}</blockquote>\n\n"
+        f"<blockquote expandable>{description}</blockquote>\n"
+        f"{powered_by_text}\n"
         f"⏱️ <i>This message will auto-delete in 5 minutes.</i>"
     )
     return caption
 
 
-# --- Helper Function to Build Rating, Favorite & Powered By Buttons ---
-def build_story_buttons(story: dict, bot_username: str = None, is_fav: bool = False, is_channel: bool = False) -> InlineKeyboardMarkup:
-    """Builds story inline buttons with Dynamic Powered By link."""
+# --- Helper Function to Build Rating & Favorite Buttons ---
+def build_story_buttons(story: dict, is_fav: bool = False, is_channel: bool = False) -> InlineKeyboardMarkup:
+    """Builds story inline buttons."""
     likes_count = len(story.get("likes", [])) if isinstance(story.get("likes"), list) else story.get("likes", 0)
     dislikes_count = len(story.get("dislikes", [])) if isinstance(story.get("dislikes"), list) else story.get("dislikes", 0)
     story_id = str(story["_id"])
@@ -93,15 +97,6 @@ def build_story_buttons(story: dict, bot_username: str = None, is_fav: bool = Fa
         ],
         [InlineKeyboardButton(fav_text, callback_data=f"fav#toggle#{story_id}")]
     ]
-
-    # ⚡ Dynamic Powered By Button
-    if bot_username:
-        layout.append([
-            InlineKeyboardButton(
-                f"⚡ Pᴏᴡᴇʀᴇᴅ Bʏ @{bot_username}", 
-                url=f"https://t.me/{bot_username}"
-            )
-        ])
 
     # ❌ Only append Close button if NOT in a Channel
     if not is_channel:
@@ -144,8 +139,8 @@ async def random_story_handler(bot: Client, message: Message):
     bot_username = bot.me.username if bot.me else (await bot.get_me()).username
     is_fav = await is_story_favorite_db(message.from_user.id, str(story["_id"]))
     is_channel = message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
-    caption = build_aesthetic_caption(story)
-    buttons = build_story_buttons(story, bot_username=bot_username, is_fav=is_fav, is_channel=is_channel)
+    caption = build_aesthetic_caption(story, bot_username=bot_username)
+    buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
 
     reply_msg = None
     try:
@@ -180,9 +175,9 @@ async def next_random_callback(bot: Client, query: CallbackQuery):
 
     bot_username = bot.me.username if bot.me else (await bot.get_me()).username
     is_fav = await is_story_favorite_db(query.from_user.id, str(story["_id"]))
-    caption = build_aesthetic_caption(story)
+    caption = build_aesthetic_caption(story, bot_username=bot_username)
     is_channel = query.message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
-    buttons = build_story_buttons(story, bot_username=bot_username, is_fav=is_fav, is_channel=is_channel)
+    buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
 
     button_list = buttons.inline_keyboard
     button_list.insert(2, [InlineKeyboardButton("🎲 Nᴇxᴛ Rᴀɴᴅᴏᴍ", callback_data="fetch_next_random")])
@@ -317,8 +312,8 @@ async def search_handler(bot: Client, message: Message):
         bot_username = bot.me.username if bot.me else (await bot.get_me()).username
         is_fav = await is_story_favorite_db(message.from_user.id, str(story["_id"]))
         is_channel = message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
-        caption = build_aesthetic_caption(story)
-        buttons = build_story_buttons(story, bot_username=bot_username, is_fav=is_fav, is_channel=is_channel)
+        caption = build_aesthetic_caption(story, bot_username=bot_username)
+        buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
 
         reply_msg = None
         try:
@@ -399,10 +394,9 @@ async def rate_story_cb(bot: Client, query: CallbackQuery):
         story = None
 
     if story:
-        bot_username = bot.me.username if bot.me else (await bot.get_me()).username
         is_fav = await is_story_favorite_db(user_id, story_id)
         is_channel = query.message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
-        updated_buttons = build_story_buttons(story, bot_username=bot_username, is_fav=is_fav, is_channel=is_channel)
+        updated_buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
         try:
             await query.message.edit_reply_markup(reply_markup=updated_buttons)
         except Exception:
@@ -427,9 +421,8 @@ async def toggle_favorite_cb(bot: Client, query: CallbackQuery):
             story = None
 
         if story:
-            bot_username = bot.me.username if bot.me else (await bot.get_me()).username
             is_channel = query.message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
-            updated_buttons = build_story_buttons(story, bot_username=bot_username, is_fav=is_fav, is_channel=is_channel)
+            updated_buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
             try:
                 await query.message.edit_reply_markup(reply_markup=updated_buttons)
             except Exception:
@@ -527,9 +520,9 @@ async def open_category_story_cb(bot: Client, query: CallbackQuery):
 
     bot_username = bot.me.username if bot.me else (await bot.get_me()).username
     is_fav = await is_story_favorite_db(query.from_user.id, str(story["_id"]))
-    caption = build_aesthetic_caption(story)
+    caption = build_aesthetic_caption(story, bot_username=bot_username)
     is_channel = query.message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
-    buttons = build_story_buttons(story, bot_username=bot_username, is_fav=is_fav, is_channel=is_channel)
+    buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
 
     reply_msg = None
     try:
@@ -575,9 +568,9 @@ async def suggestion_click_callback(bot: Client, query: CallbackQuery):
 
     bot_username = bot.me.username if bot.me else (await bot.get_me()).username
     is_fav = await is_story_favorite_db(query.from_user.id, str(story["_id"]))
-    caption = build_aesthetic_caption(story)
+    caption = build_aesthetic_caption(story, bot_username=bot_username)
     is_channel = query.message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
-    buttons = build_story_buttons(story, bot_username=bot_username, is_fav=is_fav, is_channel=is_channel)
+    buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
 
     reply_msg = None
     try:
