@@ -3,7 +3,7 @@ import asyncio
 from bson.objectid import ObjectId
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, InputMediaPhoto
-from pyrogram.enums import ParseMode
+from pyrogram.enums import ParseMode, ChatType
 from pyrogram.errors import UserNotParticipant
 from config import Config
 from database.stories_db import (
@@ -76,22 +76,28 @@ def build_aesthetic_caption(story: dict) -> str:
 
 
 # --- Helper Function to Build Rating & Favorite Buttons ---
-def build_story_buttons(story: dict, is_fav: bool = False) -> InlineKeyboardMarkup:
+def build_story_buttons(story: dict, is_fav: bool = False, is_channel: bool = False) -> InlineKeyboardMarkup:
+    """Builds buttons. Excludes Close button if post is inside a Telegram Channel."""
     likes_count = len(story.get("likes", [])) if isinstance(story.get("likes"), list) else story.get("likes", 0)
     dislikes_count = len(story.get("dislikes", [])) if isinstance(story.get("dislikes"), list) else story.get("dislikes", 0)
     story_id = str(story["_id"])
 
     fav_text = "⭐ Rᴇᴍᴏᴠᴇ Fᴀᴠ" if is_fav else "⭐ Aᴅᴅ Fᴀᴠᴏʀɪᴛᴇ"
 
-    return InlineKeyboardMarkup([
+    layout = [
         [InlineKeyboardButton("🎧 Lɪsᴛᴇɴ / Pʟᴀʏ Sᴛᴏʀʏ", url=story["link"])],
         [
             InlineKeyboardButton(f"👍 {likes_count}", callback_data=f"rate#like#{story_id}"),
             InlineKeyboardButton(f"👎 {dislikes_count}", callback_data=f"rate#dislike#{story_id}")
         ],
-        [InlineKeyboardButton(fav_text, callback_data=f"fav#toggle#{story_id}")],
-        [InlineKeyboardButton("❌ Cʟᴏsᴇ", callback_data="close_all_st")]
-    ])
+        [InlineKeyboardButton(fav_text, callback_data=f"fav#toggle#{story_id}")]
+    ]
+
+    # ❌ Only append Close button if NOT in a Channel
+    if not is_channel:
+        layout.append([InlineKeyboardButton("❌ Cʟᴏsᴇ", callback_data="close_all_st")])
+
+    return InlineKeyboardMarkup(layout)
 
 
 # --- Helper Function to Build Category Pagination Keyboard ---
@@ -127,7 +133,7 @@ async def random_story_handler(bot: Client, message: Message):
 
     is_fav = await is_story_favorite_db(message.from_user.id, str(story["_id"]))
     caption = build_aesthetic_caption(story)
-    buttons = build_story_buttons(story, is_fav=is_fav)
+    buttons = build_story_buttons(story, is_fav=is_fav, is_channel=(message.chat.type == ChatType.CHANNEL))
 
     reply_msg = None
     try:
@@ -162,7 +168,8 @@ async def next_random_callback(bot: Client, query: CallbackQuery):
 
     is_fav = await is_story_favorite_db(query.from_user.id, str(story["_id"]))
     caption = build_aesthetic_caption(story)
-    buttons = build_story_buttons(story, is_fav=is_fav)
+    is_channel = query.message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
+    buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
 
     button_list = buttons.inline_keyboard
     button_list.insert(2, [InlineKeyboardButton("🎲 Nᴇxᴛ Rᴀɴᴅᴏᴍ", callback_data="fetch_next_random")])
@@ -298,7 +305,7 @@ async def search_handler(bot: Client, message: Message):
         story = result["data"]
         is_fav = await is_story_favorite_db(message.from_user.id, str(story["_id"]))
         caption = build_aesthetic_caption(story)
-        buttons = build_story_buttons(story, is_fav=is_fav)
+        buttons = build_story_buttons(story, is_fav=is_fav, is_channel=(message.chat.type == ChatType.CHANNEL))
 
         reply_msg = None
         try:
@@ -380,7 +387,9 @@ async def rate_story_cb(bot: Client, query: CallbackQuery):
 
     if story:
         is_fav = await is_story_favorite_db(user_id, story_id)
-        updated_buttons = build_story_buttons(story, is_fav=is_fav)
+        # Check if callback trigger source is Channel or Supergroup
+        is_channel = query.message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
+        updated_buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
         try:
             await query.message.edit_reply_markup(reply_markup=updated_buttons)
         except Exception:
@@ -475,7 +484,8 @@ async def open_category_story_cb(bot: Client, query: CallbackQuery):
 
     is_fav = await is_story_favorite_db(query.from_user.id, str(story["_id"]))
     caption = build_aesthetic_caption(story)
-    buttons = build_story_buttons(story, is_fav=is_fav)
+    is_channel = query.message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
+    buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
 
     reply_msg = None
     try:
@@ -521,7 +531,8 @@ async def suggestion_click_callback(bot: Client, query: CallbackQuery):
 
     is_fav = await is_story_favorite_db(query.from_user.id, str(story["_id"]))
     caption = build_aesthetic_caption(story)
-    buttons = build_story_buttons(story, is_fav=is_fav)
+    is_channel = query.message.chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]
+    buttons = build_story_buttons(story, is_fav=is_fav, is_channel=is_channel)
 
     reply_msg = None
     try:
