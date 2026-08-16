@@ -21,7 +21,7 @@ def get_cancel_btn():
 # --- 📢 UPDATE CHANNEL HELPERS ---
 
 def build_channel_caption(story: dict, bot_username: str = None) -> str:
-    """चैनल पोस्ट के लिए एस्थेटिक कैप्श्न तैयार करता है (Powered By Clickable Link के साथ)"""
+    """चैनल पोस्ट के लिए एस्थेटिक कैप्श्न तैयार करता है (Hidden Link inside 'Loki')"""
     title = story.get("title", "Unknown Story")
     status = story.get("status", "Ongoing")
     platform = story.get("platform", "Pocket FM")
@@ -30,7 +30,9 @@ def build_channel_caption(story: dict, bot_username: str = None) -> str:
     description = story.get("description", "No description available.")
 
     status_emoji = "🟢" if str(status).lower() in ["completed", "complete"] else "♨️"
-    powered_by_text = f"⚡ <b>Powered By <a href='https://t.me/{bot_username}'>@{bot_username}</a></b>" if bot_username else ""
+    
+    # 🔥 Hyperlinked Text (नाम 'Loki' पर लिंक हिडन रहेगा)
+    powered_by_text = f"⚡ <b>Pᴏᴡᴇʀᴇᴅ Bʏ :</b> <a href='https://t.me/{bot_username}'>Loki</a>\n" if bot_username else ""
 
     caption = (
         f"<b>📢 NEW STORY / UPDATE!</b>\n\n"
@@ -48,7 +50,7 @@ def build_channel_caption(story: dict, bot_username: str = None) -> str:
 
 
 def build_channel_buttons(story: dict, bot_username: str = None) -> InlineKeyboardMarkup:
-    """चैनल/ग्रुप पोस्ट के लिए बटन्स (Likes, Dislikes, Fav & Powered By Bot)"""
+    """चैनल/ग्रुप पोस्ट के लिए बटन्स (Likes, Dislikes, Fav)"""
     likes_count = len(story.get("likes", [])) if isinstance(story.get("likes"), list) else story.get("likes", 0)
     dislikes_count = len(story.get("dislikes", [])) if isinstance(story.get("dislikes"), list) else story.get("dislikes", 0)
     story_id = str(story["_id"])
@@ -61,15 +63,6 @@ def build_channel_buttons(story: dict, bot_username: str = None) -> InlineKeyboa
         ],
         [InlineKeyboardButton("⭐ Aᴅᴅ Fᴀᴠᴏʀɪᴛᴇ", callback_data=f"fav#toggle#{story_id}")]
     ]
-
-    # 🚀 Dynamic Powered By Button
-    if bot_username:
-        keyboard.append([
-            InlineKeyboardButton(
-                f"⚡ Pᴏᴡᴇʀᴇᴅ Bʏ @{bot_username}", 
-                url=f"https://t.me/{bot_username}"
-            )
-        ])
 
     return InlineKeyboardMarkup(keyboard)
 
@@ -268,15 +261,15 @@ async def interactive_add_or_edit_story_handler(bot: Client, message: Message):
     bot_username = bot.me.username if bot.me else (await bot.get_me()).username
 
     status_emoji = "🟢" if story_status == "Completed" else "♨️"
-    powered_by_text = f"⚡ <b>Powered By <a href='https://t.me/{bot_username}'>@{bot_username}</a></b>"
+    powered_by_text = f"⚡ <b>Pᴏᴡᴇʀᴇᴅ Bʏ :</b> <a href='https://t.me/{bot_username}'>Loki</a>"
     
     caption_preview = (
         f"✅ <b>Story Saved / Updated Successfully!</b>\n\n"
-        f"<b>{status_emoji} Story : {story_title}</b>\n"
-        f"<b>🔰 Status : {story_status}</b>\n"
-        f"<b>🖥️ Platform : {story_platform}</b>\n"
-        f"<b>🧩 Genre : {story_genre}</b>\n"
-        f"<b>🎬 Episodes : {story_episodes}</b>\n"
+        f"<b>{status_emoji}Story : {story_title}</b>\n"
+        f"<b>🔰Status : {story_status}</b>\n"
+        f"<b>🖥️Platform : {story_platform}</b>\n"
+        f"<b>🧩Genre : {story_genre}</b>\n"
+        f"<b>🎬Episodes : {story_episodes}</b>\n"
         f"═══════════════════\n"
         f"📝 <b>Story Description :-</b>\n"
         f"<blockquote expandable>{story_description}</blockquote>\n\n"
@@ -284,9 +277,8 @@ async def interactive_add_or_edit_story_handler(bot: Client, message: Message):
     )
 
     preview_btn = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎧 Listen / Play Story", url=story_link)],
-        [InlineKeyboardButton(f"⚡ Powered By @{bot_username}", url=f"https://t.me/{bot_username}")],
-        [InlineKeyboardButton("❌ Close", callback_data="close_all_st")]
+        [InlineKeyboardButton("🎧 Lɪsᴛᴇɴ / Pʟᴀʏ Sᴛᴏʀʏ", url=story_link)],
+        [InlineKeyboardButton("❌ Cʟᴏsᴇ", callback_data="close_all_st")]
     ])
 
     try:
