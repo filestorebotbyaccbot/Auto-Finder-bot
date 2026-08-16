@@ -19,8 +19,11 @@ async def random_story_handler(bot: Client, message: Message):
     user_id = message.from_user.id
     is_fav = await is_story_favorite_db(user_id, str(story["_id"]))
 
-    # Photo/Caption & Rating UI Build करें (is_fav status ke saath)
-    caption = build_aesthetic_caption(story)
+    # Dynamic Bot Username Fetch
+    bot_username = bot.me.username if bot.me else (await bot.get_me()).username
+
+    # Photo/Caption & Rating UI Build करें (bot_username pass kiya)
+    caption = build_aesthetic_caption(story, bot_username=bot_username)
     buttons = build_story_buttons(story, is_fav=is_fav)
 
     # "Next Random" बटन को रेटिंग बटन्स के साथ शामिल करें
@@ -63,7 +66,10 @@ async def next_random_callback(bot: Client, query: CallbackQuery):
     user_id = query.from_user.id
     is_fav = await is_story_favorite_db(user_id, str(story["_id"]))
 
-    caption = build_aesthetic_caption(story)
+    # Dynamic Bot Username Fetch
+    bot_username = bot.me.username if bot.me else (await bot.get_me()).username
+
+    caption = build_aesthetic_caption(story, bot_username=bot_username)
     buttons = build_story_buttons(story, is_fav=is_fav)
 
     # "Next Random" बटन को रेटिंग बटन्स के साथ जोड़ें
