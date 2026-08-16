@@ -10,7 +10,7 @@ EDIT_CACHE = {}
 
 
 # --- Helper Function to Build Aesthetic HTML Caption ---
-def build_aesthetic_caption(story: dict) -> str:
+def build_aesthetic_caption(story: dict, bot_username: str = None) -> str:
     title = story.get("title", "Unknown Story")
     status = story.get("status", "Ongoing")
     platform = story.get("platform", "Pocket FM")
@@ -20,6 +20,9 @@ def build_aesthetic_caption(story: dict) -> str:
 
     # Status Emoji Logic
     status_emoji = "🟢" if str(status).lower() in ["completed", "complete"] else "♨️"
+
+    # 🔥 Hyperlinked Text (नाम 'Loki' पर लिंक हिडन रहेगा)
+    powered_by_text = f"⚡ <b>Pᴏᴡᴇʀᴇᴅ Bʏ :</b> <a href='https://t.me/{bot_username}'>Loki</a>\n" if bot_username else ""
 
     caption = (
         f"<b>📢 NEW STORY / UPDATE!</b>\n\n"
@@ -31,7 +34,7 @@ def build_aesthetic_caption(story: dict) -> str:
         f"═══════════════════\n"
         f"📝 <b>Story Description :-</b>\n"
         f"<blockquote expandable>{description}</blockquote>\n\n"
-        f"🔔 <i>Stay tuned for daily updates!</i>"
+        f"{powered_by_text}"
     )
     return caption
 
@@ -60,7 +63,8 @@ async def sync_edited_story_to_channel(bot: Client, story: dict):
     if not channel_id or not msg_id:
         return
 
-    caption = build_aesthetic_caption(story)
+    bot_username = bot.me.username if bot.me else (await bot.get_me()).username
+    caption = build_aesthetic_caption(story, bot_username=bot_username)
     buttons = build_channel_buttons(story)
 
     try:
@@ -204,8 +208,12 @@ async def edit_callback_handler(bot: Client, query: CallbackQuery):
             # 🚀 Auto-Sync live changes to Update Channel
             asyncio.create_task(sync_edited_story_to_channel(bot, updated_story))
 
-            # Build aesthetic preview for admin
+            # Fetch Bot Username for Preview
+            bot_username = bot.me.username if bot.me else (await bot.get_me()).username
             status_emoji = "🟢" if str(updated_story.get('status', '')).lower() in ["completed", "complete"] else "♨️"
+            powered_by_text = f"⚡ <b>Pᴏᴡᴇʀᴇᴅ Bʏ :</b> <a href='https://t.me/{bot_username}'>Loki</a>"
+
+            # Build aesthetic preview for admin
             preview_caption = (
                 f"✅ <b><u>FIELD UPDATED SUCCESSFULLY!</u></b>\n"
                 f"📌 <b>Updated Field:</b> <code>{field.capitalize()}</code>\n"
@@ -217,15 +225,16 @@ async def edit_callback_handler(bot: Client, query: CallbackQuery):
                 f"<b>🎬Episodes : {updated_story.get('episodes')}</b>\n"
                 f"═══════════════════\n"
                 f"📝 <b>Story Description :-</b>\n"
-                f"<blockquote expandable>{updated_story.get('description')}</blockquote>"
+                f"<blockquote expandable>{updated_story.get('description')}</blockquote>\n\n"
+                f"{powered_by_text}"
             )
 
             photo_url = updated_story.get("photo")
             story_link = updated_story.get("link", "https://t.me")
 
             action_buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🎧 Listen / Play Story", url=story_link)],
-                [InlineKeyboardButton("❌ Close", callback_data="close_all_st")]
+                [InlineKeyboardButton("🎧 Lɪsᴛᴇɴ / Pʟᴀʏ Sᴛᴏʀʏ", url=story_link)],
+                [InlineKeyboardButton("❌ Cʟᴏsᴇ", callback_data="close_all_st")]
             ])
 
             # Try sending with Photo so cover photo doesn't disappear
@@ -254,5 +263,3 @@ async def edit_callback_handler(bot: Client, query: CallbackQuery):
 
     except asyncio.TimeoutError:
         await ask_msg.edit_text("⏱️ <b>Timeout! You didn't send any message in 60 seconds.</b>", parse_mode=ParseMode.HTML)
-
-
