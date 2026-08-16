@@ -31,7 +31,7 @@ START_BUTTONS = InlineKeyboardMarkup([
         InlineKeyboardButton("⭐ Mʏ Fᴀᴠᴏʀɪᴛᴇs", callback_data="show_favs")
     ],
     [
-        InlineKeyboardButton("🎲 Sᴜʀᴘʀɪsᴇ Mᴇ / Rᴀɴᴅᴏᴍ", callback_data="fetch_next_random", style=enums.ButtonStyle.SUCCESS)
+        InlineKeyboardButton("🎲 Sᴜʀᴘʀɪsᴇ Mᴇ / Rᴀɴᴅᴏᴍ", callback_data="fetch_next_random")
     ],
     [
         InlineKeyboardButton("👤 Dᴇᴠᴇʟᴏᴘᴇʀ", url=Config.OWNER_LINK)
@@ -287,12 +287,17 @@ async def cb_handler(bot: Client, query: CallbackQuery):
         if not story:
             return await query.answer("❌ डेटाबेस में कोई स्टोरी उपलब्ध नहीं है!", show_alert=True)
 
+        user_id = query.from_user.id
         is_fav = await is_story_favorite_db(user_id, str(story["_id"]))
-        caption = build_aesthetic_caption(story)
+
+        # Dynamic Bot Username Fetch for Hyperlinked Caption
+        bot_username = bot.me.username if bot.me else (await bot.get_me()).username
+
+        caption = build_aesthetic_caption(story, bot_username=bot_username)
         buttons = build_story_buttons(story, is_fav=is_fav)
 
         button_list = buttons.inline_keyboard
-        button_list.insert(2, [InlineKeyboardButton("🎲 Nᴇxᴛ Rᴀɴᴅᴏᴍ", callback_data="fetch_next_random")])
+        button_list.insert(1, [InlineKeyboardButton("🎲 Nᴇxᴛ Rᴀɴᴅᴏᴍ", callback_data="fetch_next_random")])
         final_markup = InlineKeyboardMarkup(button_list)
 
         try:
