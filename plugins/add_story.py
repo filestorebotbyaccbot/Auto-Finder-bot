@@ -20,8 +20,8 @@ def get_cancel_btn():
 
 # --- 📢 UPDATE CHANNEL HELPERS ---
 
-def build_channel_caption(story: dict) -> str:
-    """चैनल पोस्ट के लिए एस्थेटिक कैप्श्न तैयार करता है"""
+def build_channel_caption(story: dict, bot_username: str = None) -> str:
+    """चैनल पोस्ट के लिए एस्थेटिक कैप्श्न तैयार करता है (Powered By Clickable Link के साथ)"""
     title = story.get("title", "Unknown Story")
     status = story.get("status", "Ongoing")
     platform = story.get("platform", "Pocket FM")
@@ -30,6 +30,7 @@ def build_channel_caption(story: dict) -> str:
     description = story.get("description", "No description available.")
 
     status_emoji = "🟢" if str(status).lower() in ["completed", "complete"] else "♨️"
+    powered_by_text = f"⚡ <b>Powered By <a href='https://t.me/{bot_username}'>@{bot_username}</a></b>" if bot_username else ""
 
     caption = (
         f"<b>📢 NEW STORY / UPDATE!</b>\n\n"
@@ -41,25 +42,36 @@ def build_channel_caption(story: dict) -> str:
         f"═══════════════════\n"
         f"📝 <b>Story Description :-</b>\n"
         f"<blockquote expandable>{description}</blockquote>\n\n"
-        f"🔔 <i>Stay tuned for daily updates!</i>"
+        f"{powered_by_text}"
     )
     return caption
 
 
-def build_channel_buttons(story: dict) -> InlineKeyboardMarkup:
-    """चैनल पोस्ट के लिए बटन्स (बिना क्लोज बटन के)"""
+def build_channel_buttons(story: dict, bot_username: str = None) -> InlineKeyboardMarkup:
+    """चैनल/ग्रुप पोस्ट के लिए बटन्स (Likes, Dislikes, Fav & Powered By Bot)"""
     likes_count = len(story.get("likes", [])) if isinstance(story.get("likes"), list) else story.get("likes", 0)
     dislikes_count = len(story.get("dislikes", [])) if isinstance(story.get("dislikes"), list) else story.get("dislikes", 0)
     story_id = str(story["_id"])
 
-    return InlineKeyboardMarkup([
+    keyboard = [
         [InlineKeyboardButton("🎧 Lɪsᴛᴇɴ / Pʟᴀʏ Sᴛᴏʀʏ", url=story["link"])],
         [
             InlineKeyboardButton(f"👍 {likes_count}", callback_data=f"rate#like#{story_id}"),
             InlineKeyboardButton(f"👎 {dislikes_count}", callback_data=f"rate#dislike#{story_id}")
         ],
         [InlineKeyboardButton("⭐ Aᴅᴅ Fᴀᴠᴏʀɪᴛᴇ", callback_data=f"fav#toggle#{story_id}")]
-    ])
+    ]
+
+    # 🚀 Dynamic Powered By Button
+    if bot_username:
+        keyboard.append([
+            InlineKeyboardButton(
+                f"⚡ Pᴏᴡᴇʀᴇᴅ Bʏ @{bot_username}", 
+                url=f"https://t.me/{bot_username}"
+            )
+        ])
+
+    return InlineKeyboardMarkup(keyboard)
 
 
 async def broadcast_or_sync_to_channel(bot: Client, story: dict):
@@ -68,8 +80,11 @@ async def broadcast_or_sync_to_channel(bot: Client, story: dict):
     if not channel_id:
         return
 
-    caption = build_channel_caption(story)
-    buttons = build_channel_buttons(story)
+    # बॉट का यूज़रनेम डायनामिकली प्राप्त करें
+    bot_username = bot.me.username if bot.me else (await bot.get_me()).username
+
+    caption = build_channel_caption(story, bot_username=bot_username)
+    buttons = build_channel_buttons(story, bot_username=bot_username)
     msg_id = story.get("channel_message_id")
 
     # 1. अगर पहले से चैनल में पोस्टेड है तो EDIT करें
@@ -138,7 +153,6 @@ async def interactive_add_or_edit_story_handler(bot: Client, message: Message):
     if not title_ask.text or title_ask.text.strip().lower() == "/cancel":
         return await message.reply_text("❌ **Add Story Process Cancelled!**")
     
-    # Save strictly only the first line of title
     story_title = title_ask.text.strip().split("\n")[0].strip()
     if len(story_title) < 2:
         return await message.reply_text("❌ **Invalid Title Length! Process Cancelled.**")
@@ -169,7 +183,6 @@ async def interactive_add_or_edit_story_handler(bot: Client, message: Message):
         return await message.reply_text("❌ **Add Story Process Cancelled!**")
 
     story_link = link_ask.text.strip()
-    # Basic URL Validation
     if not story_link.startswith(("http://", "https://")):
         return await message.reply_text("❌ **Invalid Link format! http:// या https:// Link भेजें. Process Cancelled.**")
 
@@ -251,8 +264,11 @@ async def interactive_add_or_edit_story_handler(bot: Client, message: Message):
     if saved_story:
         asyncio.create_task(broadcast_or_sync_to_channel(bot, saved_story))
 
-    # Preview Layout Setup
+    # Bot Username for Preview
+    bot_username = bot.me.username if bot.me else (await bot.get_me()).username
+
     status_emoji = "🟢" if story_status == "Completed" else "♨️"
+    powered_by_text = f"⚡ <b>Powered By <a href='https://t.me/{bot_username}'>@{bot_username}</a></b>"
     
     caption_preview = (
         f"✅ <b>Story Saved / Updated Successfully!</b>\n\n"
@@ -263,11 +279,13 @@ async def interactive_add_or_edit_story_handler(bot: Client, message: Message):
         f"<b>🎬 Episodes : {story_episodes}</b>\n"
         f"═══════════════════\n"
         f"📝 <b>Story Description :-</b>\n"
-        f"<blockquote expandable>{story_description}</blockquote>"
+        f"<blockquote expandable>{story_description}</blockquote>\n\n"
+        f"{powered_by_text}"
     )
 
     preview_btn = InlineKeyboardMarkup([
         [InlineKeyboardButton("🎧 Listen / Play Story", url=story_link)],
+        [InlineKeyboardButton(f"⚡ Powered By @{bot_username}", url=f"https://t.me/{bot_username}")],
         [InlineKeyboardButton("❌ Close", callback_data="close_all_st")]
     ])
 
