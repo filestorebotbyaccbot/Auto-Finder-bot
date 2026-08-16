@@ -108,7 +108,10 @@ async def story_item_click_callback(bot: Client, query: CallbackQuery):
         return await query.answer("❌ Story no longer exists!", show_alert=True)
     
     is_fav = await is_story_favorite_db(user_id, str(story["_id"]))
-    caption = build_aesthetic_caption(story)
+    
+    # Fetch bot username to ensure hyperlinked 'Loki' button works dynamically
+    bot_username = bot.me.username if bot.me else (await bot.get_me()).username
+    caption = build_aesthetic_caption(story, bot_username=bot_username)
     buttons = build_story_buttons(story, is_fav=is_fav)
     
     reply_msg = None
