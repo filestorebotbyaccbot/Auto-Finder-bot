@@ -2,9 +2,9 @@ import re
 import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
-from pyrogram.enums import MessageEntityType, ParseMode
+from pyrogram.enums import MessageEntityType, ParseMode, ChatType
 from config import Config
-from database.stories_db import save_full_story_db, save_channel_msg_id
+from database.stories_db import save_full_story_db, save_channel_msg_id, stories_col
 
 
 def parse_full_metadata(caption: str):
@@ -34,7 +34,6 @@ def parse_full_metadata(caption: str):
     if genre_match:
         genre = genre_match.group(2).strip().capitalize()
     else:
-        # Fallback to Hashtags if Genre: line is missing
         hashtags = re.findall(r"#(\w+)", caption)
         if hashtags:
             ignore_tags = ["story", "channel", "post", "update", "read", "link"]
@@ -51,12 +50,10 @@ def parse_full_metadata(caption: str):
     # 6. Story Description
     description = "No description available."
     if "Story Description" in caption:
-        # Splits after 'Story Description :-' or 'Story Description:'
         desc_part = re.split(r"(?i)story\s*description\s*[:\-]*", caption, maxsplit=1)
         if len(desc_part) > 1:
             description = desc_part[1].strip()
     elif len(lines) > 2:
-        # If no explicit header, treat remaining lines after metadata as description
         description = "\n".join(lines[2:]).strip()
 
     return raw_title, status, platform, genre, episodes, description
@@ -70,27 +67,22 @@ def extract_custom_link(message: Message) -> str:
     text = message.caption or message.text or ""
     entities = message.caption_entities or message.entities or []
 
-    # 1. Check for Hyperlinks (e.g., [Read Story](https://customurl.com))
     for entity in entities:
         if entity.type == MessageEntityType.TEXT_LINK:
             return entity.url
         elif entity.type == MessageEntityType.URL:
-            # Extract plain URL marked as entity
             return text[entity.offset : entity.offset + entity.length]
 
-    # 2. Check for Inline Keyboard Button URLs
     if message.reply_markup and message.reply_markup.inline_keyboard:
         for row in message.reply_markup.inline_keyboard:
             for button in row:
                 if button.url:
                     return button.url
 
-    # 3. Regex Fallback: Search for any http/https link in text/caption
     urls = re.findall(r'(https?://[^\s]+)', text)
     if urls:
         return urls[0]
 
-    # 4. Default Fallback: Standard Telegram Post Link
     if message.chat.username:
         return f"https://t.me/{message.chat.username}/{message.id}"
     else:
@@ -100,8 +92,8 @@ def extract_custom_link(message: Message) -> str:
 
 # --- 📢 UPDATE CHANNEL SYNC HELPERS ---
 
-def build_channel_caption(story: dict) -> str:
-    """चैनल पोस्ट के लिए एस्थेटिक कैप्श्न तैयार करता है"""
+def build_channel_caption(story: dict, bot_username: str = None) -> str:
+    """चैनल पोस्ट के लिए कैप्शन ('Stay tuned' हटाकर नीचे Powered By Link जोड़ा गया है)"""
     title = story.get("title", "Unknown Story")
     status = story.get("status", "Ongoing")
     platform = story.get("platform", "Pocket FM")
@@ -110,9 +102,10 @@ def build_channel_caption(story: dict) -> str:
     description = story.get("description", "No description available.")
 
     status_emoji = "🟢" if str(status).lower() in ["completed", "complete"] else "♨️"
+    powered_by_text = f"⚡ <b>Powered By <a href='https://t.me/{bot_username}'>@{bot_username}</a></b>" if bot_username else ""
 
     caption = (
-        f"<b>📢 NEW STORY / UPDATE!</b>\n\n"
+        f"<b>📢 NEW STORY ADDED ✅!</b>\n\n"
         f"<b>{status_emoji}Story : {title}</b>\n"
         f"<b>🔰Status : {str(status).capitalize()}</b>\n"
         f"<b>🖥️Platform : {platform}</b>\n"
@@ -121,13 +114,13 @@ def build_channel_caption(story: dict) -> str:
         f"═══════════════════\n"
         f"📝 <b>Story Description :-</b>\n"
         f"<blockquote expandable>{description}</blockquote>\n\n"
-        f"🔔 <i>Stay tuned for daily updates!</i>"
+        f"{powered_by_text}"
     )
     return caption
 
 
 def build_channel_buttons(story: dict, bot_username: str = None) -> InlineKeyboardMarkup:
-    """चैनल पोस्ट के लिए बटन्स (Likes, Dislikes, Favorite & Powered By Bot)"""
+    """चैनल और ग्रुप पोस्ट के लिए Inline Buttons"""
     likes_count = len(story.get("likes", [])) if isinstance(story.get("likes"), list) else story.get("likes", 0)
     dislikes_count = len(story.get("dislikes", [])) if isinstance(story.get("dislikes"), list) else story.get("dislikes", 0)
     story_id = str(story["_id"])
@@ -141,7 +134,6 @@ def build_channel_buttons(story: dict, bot_username: str = None) -> InlineKeyboa
         [InlineKeyboardButton("⭐ Aᴅᴅ Fᴀᴠᴏʀɪᴛᴇ", callback_data=f"fav#toggle#{story_id}")]
     ]
 
-    # 🚀 Powered By Bot Button Dynamic Addition
     if bot_username:
         keyboard.append([
             InlineKeyboardButton(
@@ -159,14 +151,13 @@ async def broadcast_or_sync_to_channel(bot: Client, story: dict):
     if not channel_id:
         return
 
-    # बॉट का यूज़रनेम डायनामिकली प्राप्त करें
     bot_username = bot.me.username if bot.me else (await bot.get_me()).username
 
-    caption = build_channel_caption(story)
+    caption = build_channel_caption(story, bot_username=bot_username)
     buttons = build_channel_buttons(story, bot_username=bot_username)
     msg_id = story.get("channel_message_id")
 
-    # 1. अगर पहले से चैनल में पोस्टेड है तो EDIT करें
+    # 1. EDIT Message
     if msg_id:
         try:
             if story.get("photo"):
@@ -189,7 +180,7 @@ async def broadcast_or_sync_to_channel(bot: Client, story: dict):
         except Exception as e:
             print(f"⚠️ [Auto-Index Channel Sync Edit Error]: {e}")
 
-    # 2. अगर पोस्टेड नहीं है तो NEW POST करें
+    # 2. NEW POST
     sent_msg = None
     try:
         if story.get("photo"):
@@ -215,31 +206,21 @@ async def broadcast_or_sync_to_channel(bot: Client, story: dict):
         print(f"❌ [Auto-Index Channel Post Error]: {e}")
 
 
-# --- Main Event Handler ---
+# --- Main Event Handlers ---
 
 @Client.on_message(filters.chat(Config.SOURCE_CHANNELS) & (filters.photo | filters.text))
 async def auto_index_channel_posts(bot: Client, message: Message):
     """
-    Automatically detects new posts in specified source channels,
-    extracts Title, Status, Platform, Genre, Episodes, Description, 
-    fetches Link, and indexes full metadata into MongoDB.
-    Also triggers broadcast to UPDATE_CHANNEL.
+    Automatically detects new posts in specified source channels and indexes metadata into MongoDB.
     """
     caption_or_text = message.caption or message.text
-    
     if not caption_or_text:
         return
     
-    # Extract Full Metadata from Caption
     clean_title, status, platform, genre, episodes, description = parse_full_metadata(caption_or_text)
-
-    # Extract Photo File ID (or fallback default banner)
     photo_id = message.photo.file_id if message.photo else "https://telegra.ph/file/default_banner.jpg"
-    
-    # Extract Custom Link or Default Channel Post Link
     final_story_link = extract_custom_link(message)
         
-    # Save into MongoDB with Full Metadata
     saved_story = await save_full_story_db(
         title=clean_title,
         photo=photo_id,
@@ -251,11 +232,9 @@ async def auto_index_channel_posts(bot: Client, message: Message):
         description=description
     )
     
-    # 🚀 Post / Update on Update Channel Automatically
     if saved_story:
         asyncio.create_task(broadcast_or_sync_to_channel(bot, saved_story))
 
-    # Send Notification to Log Channel
     if Config.LOG_CHANNEL:
         try:
             log_text = (
@@ -271,3 +250,37 @@ async def auto_index_channel_posts(bot: Client, message: Message):
             await bot.send_message(chat_id=Config.LOG_CHANNEL, text=log_text)
         except Exception as e:
             print(f"⚠️ Log alert error in auto-indexer: {e}")
+
+
+# 🚀 [FIXED] ग्रुप में ऑटो-फॉरवर्ड होकर आई पोस्ट्स पर बटन्स अटैच करने वाला हैंडलर
+@Client.on_message(filters.group & filters.forwarded)
+async def auto_attach_buttons_in_discussion_group(bot: Client, message: Message):
+    """
+    चैनल से डिस्कशन ग्रुप में ऑटो-फॉरवर्ड होकर आई पोस्ट पर तुरंत बटन्स (Likes, Dislikes, Fav, Powered By) अटैच करता है।
+    """
+    if not message.forward_from_chat or message.forward_from_chat.type != ChatType.CHANNEL:
+        return
+
+    text_content = message.caption or message.text or ""
+    if not text_content:
+        return
+
+    # कैप्शन/टेक्स्ट की पहली लाइन से Title निकालें
+    first_line = text_content.split("\n")[0].strip()
+    clean_title = first_line.replace("🟢Story :", "").replace("♨️Story :", "").replace("📢 NEW STORY / UPDATE!", "").strip()
+
+    if not clean_title and len(text_content.split("\n")) > 1:
+        clean_title = text_content.split("\n")[1].replace("🟢Story :", "").replace("♨️Story :", "").strip()
+
+    story = await stories_col.find_one({"title": clean_title})
+    if not story:
+        story = await stories_col.find_one({"title": {"$regex": f"^{re.escape(clean_title)}$", "$options": "i"}})
+
+    if story:
+        bot_username = bot.me.username if bot.me else (await bot.get_me()).username
+        buttons = build_channel_buttons(story, bot_username=bot_username)
+        
+        try:
+            await message.edit_reply_markup(reply_markup=buttons)
+        except Exception as e:
+            print(f"⚠️ [Discussion Group Auto-Button Attach Error]: {e}")
