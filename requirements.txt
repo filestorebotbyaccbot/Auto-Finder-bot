@@ -1,4 +1,4 @@
-tjgram 
+kurigram==2.2.25
 TgCrypto
 motor
 dnspython
