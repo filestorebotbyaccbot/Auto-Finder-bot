@@ -12,7 +12,7 @@ class Config:
     
     # --- Update Channel Setting (New Added 🚀) ---
     # जहाँ पर स्टोरी की न्यू पोस्ट और ऑटो-अपडेट्स (Status, Episode change) शेयर होंगे
-    UPDATE_CHANNEL = int(os.environ.get("UPDATE_CHANNEL", "-1003226074080"))
+    UPDATE_CHANNEL = int(os.environ.get("UPDATE_CHANNEL", "-1003062629837"))
     
     # --- Database Settings ---
     MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://user:pass@cluster.mongodb.net/?retryWrites=true&w=majority")
